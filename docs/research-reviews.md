@@ -19,3 +19,14 @@ The existing hourly watch may submit these reviews using the owner writer, witho
 `GET /v1/clusters/{id}` reads the persistent evidence and review history independently of the main dashboard's lead window (up to 100 links/versions per response). A lead's detail includes assessments from its linked event clusters, not only assessments anchored to that lead. The Site displays as-of dates, historical-summary labels, source-origin notes, hypotheses, decisions and original links. Topic queues remain visually distinct.
 
 Security: no new tables, no end-user policies, no credential rotation. The review RPC is SECURITY INVOKER, has an empty search path, and grants execution only to service_role. Existing Site owner pins and server-only search-writer credentials remain.
+
+
+## Observed backfill and review acceptance — November 3
+
+Collection run33 reviewed eight genuine Nov 1–3 public-source records, created seven leads and reused one, then atomically saved three investigations and seven hypothesis records including a selected historical watch summary. Retry run34 created zero new leads or assessment versions and returned the same assessment IDs. A separate selected historical vessel-report review added investigation110 and assessment records73/74, with same-origin relation30 between the original indexed X reply and its derivative event register. Total for this milestone: four reviewed investigations, nine new assessment records, and two explicitly labeled derivative report portions.
+
+Native Site readback verified cluster106's version history and current scenario, and that supporting lead161 exposes its linked event assessments. The late historical as-of16:29 summary did not replace the17:44 scenario. Five original-page texts and one public API text were inspected in backfill research; two sources remain search-result-only. No media was inspected. Research per-request capture times were unavailable, so a separately labeled clock-verified provenance checkpoint was retained rather than fabricated exact retrieval times. Search batch attribution and direct report-link/API recovery are explicitly distinguished.
+
+The backfill is bounded and not a complete archive. No original firsthand social account was established: the zero-engagement Mastodon example is an aggregator. No new notification transport or predictive-performance acceptance is claimed.
+
+During clock-triggered acceptance, the existing watch appeared in Paused without a visible reason or approval request. Its original enabled state was restored through Resume and confirmed at 18:31:58 UTC. The hourly cadence, research and notification rules were preserved. No Run now test was performed during this acceptance, and no duplicate research schedule was created. A post-resume clock-triggered receipt remains required; do not infer it from the earlier manual or one-time writer tests.

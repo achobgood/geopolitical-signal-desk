@@ -6,7 +6,7 @@ The referenced cached chat initially omitted the existing watch's execution logs
 
 ## Implemented path
 
-`POST /v1/search-intake` accepts an operator-authenticated `SearchBatch`. It records queries, query language, requested window, actual search time, provider label, source URLs, source titles, retained paraphrases, inspection state and limitations. New records use the existing unverified lead ingestion, canonical URL deduplication, evidence and audit path. Collection runs retain per-query-to-lead linkage even when a URL was already collected. No second database or public Site write action is introduced.
+`POST /v1/search-intake` accepts an operator-authenticated `SearchBatch`. It records queries, query language, requested window, actual search time, provider label, source URLs, source titles, retained paraphrases, inspection state and limitations. New records use the existing unverified lead ingestion, canonical URL deduplication, evidence and audit path. Collection runs retain per-query-to-lead linkage even when a URL was already collected. No second database or anonymous Site write action is introduced.
 
 `app/search_intake.py` defines the validated contract. `config/search-profiles.json` prepares bounded multilingual discovery profiles for Gulf/Iran, Europe/NATO/Russia, Taiwan/China and Cuba/Caribbean. `config/search-intake.schema.json` is its generated JSON schema. The profile file is **not an enabled recurring search job**.
 
