@@ -2,6 +2,16 @@
 
 Provenance-first, server-only early-warning backend using the **existing** Supabase project `uzqpndpuqubfygjwnhiv`. Raw public leads remain **unverified** without requiring independent confirmation. Collection, analysis, and alert decisions are separate operations. No automatic notifications or trading decisions are implemented.
 
+## Current intelligence milestone
+
+The multi-source framework is implemented; it is **not a validated geopolitical prediction system**. Active adapters cover public Mastodon metadata discovery, UN Geneva geopolitical briefing metadata, and CISA KEV structured catalog data. These are separate source classes; a cyber catalog entry does not corroborate a geopolitical event. Original X/Telegram/Reddit/Meta, local-community, maritime/aviation and energy/market requirements are inventoried with exact access gaps in [the coverage matrix](docs/coverage-matrix.md). Restricted platforms are not scraped.
+
+The pipeline records persistent lead history, cursors, failure/pacing receipts, same-origin relationships, topic-review cluster memberships and labeled automated triage. Topic grouping is not independent corroboration. An inspected historical Yemen investigation has three original evidence links, explicit source-dependence notes, a saved low-confidence analyst assessment and a watch decision; it is not a fresh escalation warning. The original Federal Reserve observations remain ingestion POC data.
+
+Unattended collection runs outside sleeping Render, using the **existing Supabase** pg_cron/pg_net and a narrow Vault-backed credential. The dispatcher checks every five minutes, retries partial/cold-start failures, and uses 15-minute idempotent discovery windows. Provider pacing is separate. A genuine unattended run completed on November 3 at 14:35 UTC (pipeline run 3), adding four social discovery records and one official briefing record with persistent triage. This establishes scheduled collection/triage, not notification delivery or predictive accuracy. See [pipeline boundaries](docs/pipeline-boundary.md). The current ChatGPT watch is unchanged.
+
+The owner-private [command-center Site](https://geopolitical-signal-command.boldbaron8.chatgpt.site) uses a server-side read-only credential and Sites-owned authentication. Its seven MCP tools read the same store. It has no additional intelligence database and no browser credential. Public sharing, Site write tools and external notification delivery are not enabled.
+
 ## Run and test
 
 Python 3.11 is required. Install `requirements-test.txt` in a virtual environment, then run `python -m pytest -q`. Run the API with `uvicorn app.main:app --host 0.0.0.0 --port 10000`. Environment variables must be injected by your process manager; the server deliberately does not automatically load `.env` files.
