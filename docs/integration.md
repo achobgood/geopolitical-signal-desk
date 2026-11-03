@@ -14,7 +14,7 @@ The writer stores reviewed public search batches through existing unverified lea
 
 A single-occurrence Site-linked cloud task completed the search → owner writer → persistent readback path. Collection run22 retained existing lead100 and created genuine lead129; the parent independently matched the completed run chat, `api:search-writer` audit record and native readback. The test is now disabled/completed. Its operator-verified receipt is in collection history. See [search-led collection](search-led-collection.md) for the boundary and configuration names.
 
-This verifies bounded cloud search intake, not predictive intelligence, substantive autonomous assessment, exact scheduler timing, cold-start SLA or notification replacement. No ongoing ChatGPT research schedule was created. **Geopolitical Escalation Watch II remains unchanged.**
+This verifies bounded cloud search intake, not predictive intelligence, substantive autonomous assessment, exact scheduler timing, cold-start SLA or notification replacement. No duplicate ongoing ChatGPT research schedule was created. The user subsequently authorized appending Site writeback to **Geopolitical Escalation Watch II**. Its original instructions, hourly recurrence, Eastern time zone and same-chat destination were preserved; readback confirmed the approved addition. A manual Run now completed collection run30 with five new leads (148–152). Independent native readback of lead148 confirmed its original URL, unverified status, inaccessible original-page disclosure and query provenance. This is observed manual execution of the existing watch; clock-triggered recurring writeback remains unverified.
 
 ## Server-only configuration
 

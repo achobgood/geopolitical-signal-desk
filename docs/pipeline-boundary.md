@@ -21,7 +21,7 @@ Leads stay `unverified` regardless of collection success. Collection does not re
 
 Automated social triage records a request for source inspection with `assessment_origin=automated_triage`. It makes no event prediction and cannot justify an alert. Analyst assessments are separate append-only records with alternatives, source limitations, strengthening conditions, baseline comparison and falsification criteria. Stable request hashes deduplicate retries; a changed assessment creates a new hypothesis version. A reviewed genuine-source demonstration is marked as an analyst assessment, with source dates distinct from ingestion time.
 
-Alert decisions remain separate in `alert_history`. Automatic external notification delivery is **not implemented** and no alert is sent merely because a record was collected, grouped, or triaged. A future delivery transport requires an authorized channel, credentials and delivery receipts. Keep Geopolitical Escalation Watch II unchanged until collection, analysis and notification all pass replacement acceptance.
+Alert decisions remain separate in `alert_history`. Automatic external notification delivery is **not implemented** and no alert is sent merely because a record was collected, grouped, or triaged. A future delivery transport requires an authorized channel, credentials and delivery receipts. Keep Geopolitical Escalation Watch II enabled until collection, analysis and notification all pass replacement acceptance. A later explicit user exception authorized additive Site writeback only; the existing research, cadence and alert rules remain intact.
 
 ## Unattended scheduling
 
@@ -35,7 +35,7 @@ Social discovery runs at most once per 15-minute window; institutional briefings
 
 Earlier ChatGPT reports are derivative **historical summaries**, never additional independent evidence. Preserve report ID/export provenance, generation/as-of dates, original URLs, original publication/event uncertainty, inspection status and corrections. Recover and inspect original public source links into separate lead/evidence records, then attach the historical summary as `assessment_origin=historical_summary` with its limitations and references in analysis metadata. A summary repeating another summary or a UN repost does not increase independence. Do not mark an inaccessible source inspected, invent missing publication dates, or label an old report a fresh signal.
 
-The available referenced chat preview contains deployment discussion rather than the earlier intelligence reports. No report was imported or fabricated. An actual export or accessible report thread is needed for a faithful import; original claims must be reviewed for prohibited personal/tactical detail before persistence. Preserve the private report itself outside the public GitHub repository.
+The initial referenced chat preview contained deployment discussion rather than intelligence reports. The existing watch report chat was subsequently located and read locally; a separate cloud source-access probe could not read that private chat. No bulk historical report import was performed. The authorized existing-watch writeback instead saves public observations from that run's research, preserving source inspection limits. Earlier summaries still require a distinct provenance-preserving historical import and safety review. Preserve the private report itself outside the public GitHub repository.
 
 
 ## Observed acceptance receipt — November 3, 2026
