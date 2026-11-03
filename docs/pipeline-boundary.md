@@ -25,11 +25,11 @@ Alert decisions remain separate in `alert_history`. Automatic external notificat
 
 ## Unattended scheduling
 
-Render Free sleeps. The dispatcher therefore lives in the existing Supabase database using `pg_cron` and `pg_net`. A 5-minute dispatch check retries transport/cold-start failures; a UTC-hour run key and provider pacing permit at most one successful hourly collection batch. A completed run is idempotent; partial/failed or abandoned runs can be retried. HTTP timeout is 240 seconds; pipeline work is bounded to 150 seconds, leaving room for cold starts.
+Render Free sleeps. The dispatcher therefore lives in the existing Supabase database using `pg_cron` and `pg_net`. A 5-minute dispatch check retries transport/cold-start failures; a UTC 15-minute run key and provider pacing permit at most one successful discovery batch per 15-minute window. A completed run is idempotent; partial/failed or abandoned runs can be retried. HTTP timeout is 240 seconds; pipeline work is bounded to 150 seconds, leaving room for cold starts.
 
 A dedicated scheduler secret is generated **inside Supabase Vault**. It never appears in source or a tool response. Render stores only its SHA-256 digest. It authenticates only `/v1/pipeline/scheduled`; it cannot read leads or submit arbitrary analyst writes. Private dispatch receipts, `cron.job_run_details`, HTTP response records, `pipeline_runs` and per-provider collection runs distinguish scheduling, transport, ingestion and analysis outcomes. A queued HTTP request or successful cron SQL statement alone is not pipeline success.
 
-This is an hourly development collector with retries, not an SLA. Free-tier project pauses/outages, upstream access changes, a bounded feed window and credential revocation remain failure modes. No paid resource or second database is introduced. Report an actual unattended `supabase_cron` pipeline run with final provider/analysis results before calling scheduling verified. That still does not validate notification replacement or early-warning accuracy.
+Social discovery runs at most once per 15-minute window; institutional briefings are paced to 30 minutes and the cyber catalog to 6 hours. This is a development collector with retries, not an SLA. Free-tier project pauses/outages, upstream access changes, a bounded feed window and credential revocation remain failure modes. No paid resource or second database is introduced. Report an actual unattended `supabase_cron` pipeline run with final provider/analysis results before calling scheduling verified. That still does not validate notification replacement or early-warning accuracy.
 
 ## Historical ChatGPT reports
 

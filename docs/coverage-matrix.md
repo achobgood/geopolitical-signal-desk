@@ -45,3 +45,8 @@ Collection eligibility, evidence analysis and notification eligibility are separ
 5. Verify unattended execution with durable dispatch/run receipts and failures. A cron entry or manually invoked job is configuration/test evidence, not proof of an unattended run. Full replacement acceptance additionally requires observed assessment and notification behavior. Leave **Geopolitical Escalation Watch II** unchanged until that proof exists.
 
 No paid access or new external account was purchased/provisioned for this inventory. Numeric limits above are documentation snapshots; adapters must obey current response headers and their actual grants. Authorization-blocked and unimplemented rows are explicit remaining gaps, not promises of available coverage.
+
+
+## Observed implementation update
+
+Manual pipeline acceptance persisted 20 public Mastodon metadata-only discoveries (no text/profile/media), 6 CISA KEV catalog entries, automated topic queues and 3 triage tasks. The UN News Middle East adapter returned HTTP 404 from the deployed Render runtime despite local access; this failure is retained and surfaced. A separately permitted UN Geneva briefing adapter replaces that failing provider in the active cross-section; its deployed status must be checked from collection receipts. Reviewed October UN Geneva/UN News evidence also supports a saved historical Yemen assessment, with explicit same-origin and related relations. These are not fresh firsthand observations or validated early-warning performance.

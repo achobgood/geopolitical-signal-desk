@@ -89,7 +89,7 @@ class UNMiddleEast:
 
 
 class MastodonDiscovery:
-    capabilities=Capabilities("mastodon_iran","public_social_discovery","One instance's known public #Iran cache, max20/poll; metadata only. No text, account profile or media retained. Not all Mastodon, not X/Telegram, no guarantee of firsthand origin.",original_discovery=True)
+    capabilities=Capabilities("mastodon_iran","public_social_discovery","One instance's known public #Iran cache, max20/poll; metadata only. No text, account profile or media retained. Not all Mastodon, not X/Telegram, no guarantee of firsthand origin.",min_interval_seconds=300,original_discovery=True)
     async def fetch(self,cursor):
         suffix="&min_id="+str(int(cursor["min_id"])) if cursor.get("min_id") else ""
         return self.parse(json.loads(await public_bytes("https://mastodon.social/api/v1/timelines/tag/iran?limit=20"+suffix)))
@@ -118,8 +118,32 @@ class MastodonDiscovery:
         return Batch(leads,len(seen),len(seen)-len(leads),{"min_id":str(max(ids))} if ids else {})
 
 
+class UNGeneva:
+    capabilities=Capabilities("un_geneva_briefings","official_geopolitical","Official briefing feed with Iran/Yemen/Gulf topic screening; institutional reporting, not independent ground verification. Original articles/media not inspected by collector.",max_items=10,min_interval_seconds=1800)
+    async def fetch(self,cursor):
+        return self.parse(await public_bytes("https://www.ungeneva.org/en/news-media/briefings-list/rss.xml",1_500_000))
+    def parse(self,data):
+        root=ElementTree.fromstring(data);items=root.findall('./channel/item')[:20];leads=[]
+        if root.tag!='rss':raise ValueError('Expected RSS')
+        for item in items:
+            url=(item.findtext('link') or '').strip();title=(item.findtext('title') or '').strip()
+            # Inspect only syndicated text for broad topical selection; never persist
+            # detailed transit routes, private names or the full briefing body.
+            description=(item.findtext('description') or '').lower()
+            u=urlsplit(url)
+            if u.scheme!='https' or u.hostname!='www.ungeneva.org' or not u.path.startswith('/en/news-media/press-briefing/') or not title:continue
+            if not any(topic in description for topic in ('yemen','iran','gulf','middle east')):continue
+            leads.append(LeadIn(source_url=url,source_platform='un_geneva_rss',source_kind='official',observation='UN Geneva published a briefing containing Middle East-related institutional remarks; original text review required: '+title,
+                broad_region='Middle East',original_posted_at=stamp(item.findtext('pubDate')),capture_time_note='RSS publication metadata, event time not inferred',
+                observed_vs_inferred='Briefing index and broad topic match observed; no detailed source claims retained automatically',
+                provenance=Provenance(permitted_public=True,safety_reviewed=True,account_type='official',language_code='en',topic='Middle East institutional reporting',origin_group='unknown',media_access='metadata_only',
+                    safety_review_method='Index metadata and broad topic only; no briefing body retained',collection_limitations=self.capabilities.limitations)))
+            if len(leads)>=10:break
+        return Batch(leads,len(items),len(items)-len(leads))
+
+
 class CisaKEV:
-    capabilities=Capabilities("cisa_kev","cyber_infrastructure","Latest six known-exploited catalog additions, not incident telemetry, attribution, exploit timing or regional targeting",max_items=6)
+    capabilities=Capabilities("cisa_kev","cyber_infrastructure","Latest six known-exploited catalog additions, not incident telemetry, attribution, exploit timing or regional targeting",max_items=6,min_interval_seconds=21600)
     async def fetch(self,cursor):
         return self.parse(json.loads(await public_bytes("https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",3_000_000)))
     def parse(self,data):
@@ -139,8 +163,9 @@ class CisaKEV:
         return Batch(leads,len(items))
 
 
-PROVIDERS={p.capabilities.name:p for p in [MastodonDiscovery(),UNMiddleEast(),CisaKEV()]}
+PROVIDERS={p.capabilities.name:p for p in [MastodonDiscovery(),UNGeneva(),CisaKEV()]}
 BLOCKED={
+    "un_middle_east":{"category":"official geopolitical","status":"access_failed","reason":"UN News feed returned HTTP 404 from deployed Render runtime despite local HTTP200. Failure retained; no access-restriction bypass. UN Geneva official feed is a separately permitted source."},
     "x":{"category":"public X","status":"authorization_required","reason":"Written X approval for intelligence/sensitive-event monitoring plus an entitled API account required; no scraping fallback"},
     "telegram":{"category":"public Telegram","status":"authorization_required","reason":"AI aggregation/deployment restrictions require documented permission/consent; API credentials alone are insufficient"},
     "reddit":{"category":"Reddit/community","status":"approval_required","reason":"Approved use case and OAuth required; new public API approval availability restricted"},

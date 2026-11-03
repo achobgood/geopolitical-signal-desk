@@ -176,6 +176,10 @@ async def desk_snapshot(store=Depends(get_store)):
     result["limits"] = {**tables, "leads": 200, "cluster_leads": 500}
     result["coverage"] = coverage()
     result["pipeline_runs"] = await store.rows("pipeline_runs",limit=20)
+    for item in result["coverage"]:
+        item["last_run"] = next((r for r in result["collection_runs"] if r["collector"]==item["provider"]),None)
+        item["scheduled_collection_observed"] = any(r["trigger_kind"]=="supabase_cron" and any(p["provider"]==item["provider"] and p["status"]=="completed" for p in r.get("details",{}).get("providers",[])) for r in result["pipeline_runs"])
+        item["schedule_verified"] = item["scheduled_collection_observed"]
     result["scope_note"] = "Working multi-source collection and triage, not validated geopolitical prediction. Fed RSS records are ingestion proof of concept. Automated topic queues are not event conclusions."
     return result
 

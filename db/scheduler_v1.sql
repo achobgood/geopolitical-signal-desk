@@ -20,8 +20,9 @@ declare token text; req bigint; k text;
 begin
  update private.signal_dispatches d set status_code=r.status_code,error_message=case when r.error_msg is not null then 'HTTP transport failure' else null end
  from net._http_response r where r.id=d.request_id and d.status_code is null;
- k:='cron:'||to_char(now() at time zone 'UTC','YYYYMMDDHH24');
- select request_id into req from private.signal_dispatches where run_key=k and status_code=200 order by dispatched_at desc limit 1;
+ k:='cron:'||to_char(now() at time zone 'UTC','YYYYMMDDHH24')||':'||floor(extract(minute from now() at time zone 'UTC')/15)::text;
+ select d.request_id into req from private.signal_dispatches d join net._http_response r on r.id=d.request_id
+ where d.run_key=k and r.status_code=200 and r.content::jsonb->'run'->>'run_status'='completed' order by d.dispatched_at desc limit 1;
  if req is not null then return req;end if;
  select decrypted_secret into strict token from vault.decrypted_secrets where name='signal_desk_scheduler';
  req:=net.http_post(url:='https://geopolitical-signal-desk.onrender.com/v1/pipeline/scheduled',

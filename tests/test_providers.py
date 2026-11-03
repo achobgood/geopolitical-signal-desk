@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from app.providers import MastodonDiscovery, UNMiddleEast, CisaKEV, coverage
+from app.providers import MastodonDiscovery, UNMiddleEast, UNGeneva, CisaKEV, coverage
 from app.pipeline import provider_run, run_pipeline
 
 
@@ -41,6 +41,19 @@ def test_coverage_does_not_claim_restricted_sources_are_live():
     assert values['x']['status']=='authorization_required'
     assert values['telegram']['status']=='authorization_required'
     assert values['reddit']['status']=='approval_required'
+
+
+def test_geneva_retains_only_index_and_topic_not_full_sensitive_body():
+    rss=b'<rss><channel><item><title>UN Geneva briefing</title><link>https://www.ungeneva.org/en/news-media/press-briefing/test</link><description>Yemen. PRIVATE NAMES AND TACTICAL ROUTE DETAILS</description></item></channel></rss>'
+    batch=UNGeneva().parse(rss)
+    assert len(batch.leads)==1
+    assert 'PRIVATE NAMES' not in batch.leads[0].model_dump_json()
+    assert batch.leads[0].provenance.content_access=='metadata_only'
+
+
+def test_geneva_does_not_claim_unrelated_briefing_is_geopolitical_signal():
+    rss=b'<rss><channel><item><title>Statistics briefing</title><link>https://www.ungeneva.org/en/news-media/press-briefing/test</link><description>Unrelated statistics</description></item></channel></rss>'
+    assert UNGeneva().parse(rss).leads==[]
 
 
 def test_duplicate_pipeline_lease_does_not_collect():
