@@ -516,6 +516,17 @@
           "maxLength": 200,
           "title": "Requested Window",
           "type": "string"
+        },
+        "method": {
+          "default": "web_search",
+          "enum": [
+            "web_search",
+            "direct_url",
+            "public_api",
+            "mixed_recovery"
+          ],
+          "title": "Method",
+          "type": "string"
         }
       },
       "required": [
@@ -544,6 +555,21 @@
     "searched_at": {
       "format": "date-time",
       "title": "Searched At",
+      "type": "string"
+    },
+    "search_time_precision": {
+      "default": "exact",
+      "enum": [
+        "exact",
+        "as_of_checkpoint"
+      ],
+      "title": "Search Time Precision",
+      "type": "string"
+    },
+    "search_time_note": {
+      "default": "",
+      "maxLength": 600,
+      "title": "Search Time Note",
       "type": "string"
     },
     "queries": {

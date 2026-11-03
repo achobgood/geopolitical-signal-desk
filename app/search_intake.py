@@ -15,6 +15,7 @@ class SearchQuery(StrictModel):
     query: str = Field(min_length=1,max_length=800)
     language: str = Field(default="und",max_length=20)
     requested_window: str = Field(default="Not specified",max_length=200)
+    method: Literal["web_search", "direct_url", "public_api", "mixed_recovery"] = "web_search"
 
 
 class SearchHit(StrictModel):
@@ -40,6 +41,8 @@ class SearchBatch(StrictModel):
     batch_id: str = Field(min_length=3,max_length=100,pattern=r"^[a-zA-Z0-9:_-]+$")
     provider: str = Field(min_length=1,max_length=80)
     searched_at: datetime
+    search_time_precision: Literal["exact", "as_of_checkpoint"] = "exact"
+    search_time_note: str = Field(default="", max_length=600)
     queries: list[SearchQuery] = Field(min_length=1,max_length=8)
     hits: list[SearchHit] = Field(default_factory=list,max_length=20)
     run_limitations: str = Field(min_length=1,max_length=1500)
@@ -58,6 +61,8 @@ class SearchBatch(StrictModel):
     def query_references(self):
         ids=[q.id for q in self.queries]
         if len(set(ids))!=len(ids):raise ValueError("Query IDs must be distinct")
+        if self.search_time_precision == "as_of_checkpoint" and not self.search_time_note:
+            raise ValueError("Explain unknown retrieval timing instead of inventing an exact search time")
         if any(h.query_id not in ids for h in self.hits):raise ValueError("Unknown query reference")
         urls={h.source_url for h in self.hits}
         if any(not {e.source_url for e in review.evidence} <= urls for review in self.analyses):
@@ -69,8 +74,9 @@ class SearchBatch(StrictModel):
 
 def normalize_hit(batch: SearchBatch,hit: SearchHit) -> LeadIn:
     query=next(q for q in batch.queries if q.id==hit.query_id)
-    note=(f"Discovery: {batch.provider}. Search time: {batch.searched_at.isoformat()}. "
-          f"Query: {query.query}. Requested window: {query.requested_window}. "
+    time_label="Search time" if batch.search_time_precision=="exact" else "Research as-of checkpoint (capture times unknown)"
+    note=(f"Discovery: {batch.provider}. {time_label}: {batch.searched_at.isoformat()}. {batch.search_time_note} "
+          f"Method: {query.method}. Query/recovery request: {query.query}. Requested window: {query.requested_window}. "
           f"Original page access: {hit.original_page_access}. {hit.limitations}")
     return LeadIn(source_url=hit.source_url,source_platform="public_web_search",source_kind=hit.source_kind,
         observation=hit.observation,broad_region=hit.broad_region,
@@ -90,6 +96,7 @@ def normalize_hit(batch: SearchBatch,hit: SearchHit) -> LeadIn:
 
 async def import_search_batch(batch,store,ingest,actor):
     details={"batch_id":batch.batch_id,"search_provider":batch.provider,"searched_at":batch.searched_at.isoformat(),
+             "search_time_precision":batch.search_time_precision,"search_time_note":batch.search_time_note,
              "queries":[q.model_dump() for q in batch.queries],"results":[],"unattended":False,
              "caller_execution_context":batch.execution_context,"execution_reference":batch.execution_reference,
              "purpose":batch.purpose,"analysis_receipts":[],

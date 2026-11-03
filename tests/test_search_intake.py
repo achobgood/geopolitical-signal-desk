@@ -58,3 +58,12 @@ def test_partial_search_intake_records_failure_without_echoing_secret():
     s=Store();r=asyncio.run(import_search_batch(SearchBatch(**p),s,ingest,'test'))
     assert r['status']=='partial' and r['new_leads']==1
     assert 'secret-canary' not in s.saved['error_summary']
+
+def test_backfill_can_preserve_unknown_capture_time_and_direct_url_recovery():
+    p=payload();p.update(search_time_precision='as_of_checkpoint',search_time_note='Sources were recovered before this clock checkpoint; per-request times unavailable')
+    p['queries'][0]['method']='direct_url';p['queries'][0]['query']='https://example.org/public/report'
+    b=SearchBatch(**p);lead=normalize_hit(b,b.hits[0])
+    assert 'capture times unknown' in lead.provenance.collection_limitations
+    assert 'Method: direct_url' in lead.provenance.collection_limitations
+    p['search_time_note']=''
+    with pytest.raises(ValidationError):SearchBatch(**p)
