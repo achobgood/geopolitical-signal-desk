@@ -32,9 +32,13 @@ async def authorize(request: Request, credentials: HTTPAuthorizationCredentials 
     supplied = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else ""
     reader_hash = os.getenv("SIGNAL_DESK_READ_KEY_SHA256", "")
     is_reader = len(reader_hash) == 64 and secrets.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), reader_hash)
+    writer_hash = os.getenv("SIGNAL_DESK_SEARCH_WRITER_KEY_SHA256", "")
+    is_search_writer = len(writer_hash) == 64 and secrets.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), writer_hash)
     valid = secrets.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), expected_hash) if expected_hash else secrets.compare_digest(supplied.encode(), expected.encode())
-    if not valid and not is_reader:
+    if not valid and not is_reader and not is_search_writer:
         raise HTTPException(401, "Invalid or missing API credentials", headers={"WWW-Authenticate": "Bearer"})
+    if is_search_writer and not valid and (request.method != "POST" or request.url.path != "/v1/search-intake"):
+        raise HTTPException(403, "This credential permits search intake only")
     if is_reader and not valid and request.method != "GET":
         raise HTTPException(403, "This credential permits read-only access")
     now = time.monotonic()
@@ -43,7 +47,7 @@ async def authorize(request: Request, credentials: HTTPAuthorizationCredentials 
     if len(requests) >= 120:
         raise HTTPException(429, "Request limit reached", headers={"Retry-After": "60"})
     requests.append(now)
-    return "api:reader" if is_reader and not valid else "api:shared-key"
+    return "api:shared-key" if valid else "api:search-writer" if is_search_writer else "api:reader"
 
 
 @app.middleware("http")

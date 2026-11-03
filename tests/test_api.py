@@ -199,3 +199,20 @@ def test_search_intake_is_not_a_public_or_reader_write_route(client,monkeypatch)
     assert client.post('/v1/search-intake',json=body).status_code==401
     assert client.post('/v1/search-intake',headers={'Authorization':'Bearer '+reader},json=body).status_code==403
     assert client.fake.calls==[]
+
+
+def test_search_writer_scope_is_limited_to_intake(client,monkeypatch):
+    import hashlib
+    token='test-intake-only-key-'*3
+    monkeypatch.setenv('SIGNAL_DESK_SEARCH_WRITER_KEY_SHA256',hashlib.sha256(token.encode()).hexdigest())
+    headers={'Authorization':'Bearer '+token}
+    for path,method,body in [('/v1/leads','GET',None),('/ready','GET',None),('/v1/leads','POST',LEAD),('/v1/collect/federal-reserve','POST',None),('/v1/pipeline/run','POST',{'run_key':'test:scope'})]:
+        assert client.request(method,path,headers=headers,json=body).status_code==403
+    assert client.fake.calls==[]
+    class IntakeStore(FakeStore):
+        async def insert(self,table,body):return {'id':123}
+        async def patch(self,*args):return []
+    app.dependency_overrides[get_store]=IntakeStore
+    body={'batch_id':'test:empty-intake','provider':'fixture','searched_at':'2026-11-03T12:00:00Z','queries':[{'id':'test','query':'public source'}],'hits':[],'run_limitations':'Synthetic local fixture'}
+    r=client.post('/v1/search-intake',headers=headers,json=body)
+    assert r.status_code==200 and r.json()['run_id']==123

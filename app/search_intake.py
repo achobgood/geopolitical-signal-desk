@@ -39,6 +39,8 @@ class SearchBatch(StrictModel):
     queries: list[SearchQuery] = Field(min_length=1,max_length=8)
     hits: list[SearchHit] = Field(default_factory=list,max_length=20)
     run_limitations: str = Field(min_length=1,max_length=1500)
+    execution_context: Literal["interactive","unattended_test","scheduled"] = "interactive"
+    execution_reference: str = Field(default="",max_length=200)
 
     @field_validator("searched_at")
     @classmethod
@@ -77,6 +79,8 @@ def normalize_hit(batch: SearchBatch,hit: SearchHit) -> LeadIn:
 async def import_search_batch(batch,store,ingest,actor):
     details={"batch_id":batch.batch_id,"search_provider":batch.provider,"searched_at":batch.searched_at.isoformat(),
              "queries":[q.model_dump() for q in batch.queries],"results":[],"unattended":False,
+             "caller_execution_context":batch.execution_context,"execution_reference":batch.execution_reference,
+             "unattended_verification":"Not verified; caller context alone is not scheduler proof",
              "runner_note":"Caller-submitted research. Background search is not activated by this endpoint."}
     run=await store.insert("collection_runs",{"collector":"external_web_search","access_limitations":batch.run_limitations,"details":details})
     new=0;status="completed";error=""

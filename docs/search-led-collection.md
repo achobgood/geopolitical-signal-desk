@@ -24,9 +24,14 @@ An authorized external caller can validate a research batch with `scripts/import
 
 ## Scheduling choices and current boundary
 
-1. **ChatGPT research runner:** use its available web search/browsing and connected tools, then an explicitly authorized write path into `/v1/search-intake`. The generated Site plugin currently exposes reads only; a narrowly scoped owner-authorized writer still needs implementation/acceptance before scheduled writeback. Task permissions and a real unattended run must be tested. Do not infer that every scheduled task has every tool.
+1. **ChatGPT research runner:** use its available web search/browsing and connected tools, then an explicitly authorized write path into `/v1/search-intake`. The generated Site plugin exposes seven reads and `record_search_batch`, a writer limited to the authenticated owner pinned by a server-side email digest. It holds a separate backend credential accepted only for search intake. Writer deployment and actual unattended execution are separate acceptance steps. Task permissions and a real unattended run must be tested. Do not infer that every scheduled task has every tool.
 2. **Backend-owned search runner:** call a supported search provider (for example the OpenAI API web-search tool) from the backend with a server-side API key and an agreed budget. This is separate from ChatGPT's interactive search entitlement. No search-provider key, billing, paid model call or background search job is activated by this change.
 
 Keep **Geopolitical Escalation Watch II** unchanged and do not create a duplicate ChatGPT automation. The existing Supabase scheduler continues the implemented public adapters; it does not magically gain ChatGPT's built-in web-search tool.
 
 Official references checked November 3, 2026: [ChatGPT scheduled tasks](https://learn.chatgpt.com/docs/automations) and [OpenAI API web search](https://developers.openai.com/api/docs/guides/tools-web-search).
+
+
+## Writer authorization
+
+The user explicitly authorized the owner writer and one unattended test. Existing Site identity checks remain. The MCP writer additionally requires the verified caller email to match `SIGNAL_DESK_WRITER_OWNER_EMAIL_SHA256`. Its server-only `SIGNAL_DESK_SEARCH_WRITE_TOKEN` is accepted by Render only at POST `/v1/search-intake` using `SIGNAL_DESK_SEARCH_WRITER_KEY_SHA256`; it cannot use general read/write, collection or scheduler endpoints. Runtime secrets contain no Supabase credential. Caller-declared `execution_context`/`execution_reference` are retained, but are not scheduler proof: `details.unattended` remains false until an operator matches real cloud-run receipts. Public sharing remains unchanged. The existing hourly watch is not edited.

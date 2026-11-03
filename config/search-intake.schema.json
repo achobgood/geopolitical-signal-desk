@@ -181,6 +181,22 @@
       "minLength": 1,
       "title": "Run Limitations",
       "type": "string"
+    },
+    "execution_context": {
+      "default": "interactive",
+      "enum": [
+        "interactive",
+        "unattended_test",
+        "scheduled"
+      ],
+      "title": "Execution Context",
+      "type": "string"
+    },
+    "execution_reference": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Execution Reference",
+      "type": "string"
     }
   },
   "required": [

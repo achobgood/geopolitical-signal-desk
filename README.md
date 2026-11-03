@@ -12,7 +12,7 @@ The pipeline records persistent lead history, cursors, failure/pacing receipts, 
 
 Unattended collection runs outside sleeping Render, using the **existing Supabase** pg_cron/pg_net and a narrow Vault-backed credential. The dispatcher checks every five minutes, retries partial/cold-start failures, and uses 15-minute idempotent discovery windows. Provider pacing is separate. A genuine unattended run completed on November 3 at 14:35 UTC (pipeline run 3), adding four social discovery records and one official briefing record with persistent triage. This establishes scheduled collection/triage, not notification delivery or predictive accuracy. See [pipeline boundaries](docs/pipeline-boundary.md). The current ChatGPT watch is unchanged.
 
-The owner-private [command-center Site](https://geopolitical-signal-command.boldbaron8.chatgpt.site) uses a server-side read-only credential and Sites-owned authentication. Its seven MCP tools read the same store. It has no additional intelligence database and no browser credential. Public sharing, Site write tools and external notification delivery are not enabled.
+The [command-center Site](https://geopolitical-signal-command.boldbaron8.chatgpt.site) uses a server-side read-only credential and Sites-owned authentication. The user has made the Site public. Seven MCP tools read the same store; a separately pinned owner-only writer submits reviewed search batches. Other signed-in visitors retain reads. The writer uses a separate search-intake-only backend credential and cannot make other API calls. No browser credential or additional intelligence database is used. External notification delivery is not enabled.
 
 ## Run and test
 
