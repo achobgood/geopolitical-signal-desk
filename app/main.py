@@ -201,7 +201,8 @@ async def scheduled(value: PipelineIn, credentials: HTTPAuthorizationCredentials
     supplied=credentials.credentials if credentials and credentials.scheme.lower()=="bearer" else ""
     if len(expected)!=64 or not secrets.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(),expected):
         raise HTTPException(401,"Invalid scheduler credential")
-    return await run_pipeline(store,ingest,value.run_key,"supabase_cron")
+    result=await run_pipeline(store,ingest,value.run_key,"supabase_cron")
+    return JSONResponse(result,status_code=200 if result["run"]["run_status"]=="completed" else 207)
 
 
 @app.post("/v1/collect/federal-reserve", dependencies=[Depends(authorize)])

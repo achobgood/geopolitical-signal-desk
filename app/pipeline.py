@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 import hashlib
 import json
+import httpx
 
 from app.models import AssessmentIn, ClusterIn, RelationIn
 from app.providers import PROVIDERS
@@ -26,8 +27,11 @@ async def provider_run(provider, store, ingest):
         for lead in batch.leads:
             result=await ingest(lead,store,"collector:"+cap.name)
             ids.append(result["lead"]["id"]);new+=int(result["created"])
-    except Exception:
-        status="partial" if ids else "failed";error="Provider fetch/ingest failed; no credential or content details logged"
+    except Exception as exc:
+        status="partial" if ids else "failed"
+        if isinstance(exc,httpx.HTTPStatusError):error=f"Provider returned HTTP {exc.response.status_code}; no restriction bypass attempted"
+        elif isinstance(exc,(httpx.TimeoutException,TimeoutError)):error="Provider timed out; retry remains bounded by pacing"
+        else:error="Provider parse/ingest failed; no credential or content details logged"
     finished={"run_status":status,"finished_at":now(),"observations_seen":seen,"new_leads":new,"error_summary":error,"details":details}
     await store.patch("collection_runs",run["id"],finished)
     return {"provider":cap.name,"run_id":run["id"],"status":status,"new_leads":new,"seen":seen,"lead_ids":ids}
@@ -43,7 +47,8 @@ async def correlate_and_triage(store):
         if origin!="unknown" and not origin.startswith("UN News;"):origins.setdefault(origin,[]).append(lead)
     for origin,items in origins.items():
         for other in items[1:]:
-            payload=RelationIn(lead_id=items[0]["id"],other_lead_id=other["id"],relation_type="same_origin",rationale="Recorded origin group matches: "+origin).model_dump()
+            a,b=sorted([items[0]["id"],other["id"]])
+            payload=RelationIn(lead_id=a,other_lead_id=b,relation_type="same_origin",rationale="Recorded origin group matches: "+origin).model_dump()
             r=await store.rpc("signal_relation_v1",{"payload":payload,"p_actor":"pipeline:origin-trace"});links+=int(r["created"])
     for topic,items in groups.items():
         payload=ClusterIn(canonical_key="topic-review:"+key(topic),title="Topic review: "+topic,broad_region=items[0]["broad_region"],
