@@ -28,6 +28,10 @@ class FakeStore:
         self.calls.append((table, kwargs))
         return []
 
+    async def request(self, method, path, **kwargs):
+        self.calls.append((path, kwargs))
+        return []
+
 
 @pytest.fixture
 def client(monkeypatch):
@@ -151,3 +155,26 @@ def test_rate_limit(client):
     for _ in range(120):
         assert client.get("/v1/leads", headers=AUTH).status_code == 200
     assert client.get("/v1/leads", headers=AUTH).status_code == 429
+
+
+def test_reader_key_cannot_write_or_collect(client, monkeypatch):
+    import hashlib
+    reader = "test-reader-only-token-" * 3
+    monkeypatch.setenv("SIGNAL_DESK_READ_KEY_SHA256", hashlib.sha256(reader.encode()).hexdigest())
+    headers = {"Authorization": "Bearer " + reader}
+    assert client.get("/v1/desk/snapshot", headers=headers).status_code == 200
+    client.fake.calls.clear()
+    for path, payload in [("/v1/leads", LEAD), ("/v1/collect/federal-reserve", None),
+        ("/v1/assessments", {"lead_id":1,"scenario":"test","rationale":"test","alternative_explanations":"routine",
+         "falsification_criteria":"opposite","analysis_threshold":"test"}),
+        ("/v1/decisions", {"lead_id":1,"decision":"watch","rationale":"test","notification_threshold":"test"})]:
+        assert client.post(path, headers=headers, json=payload).status_code == 403
+    assert client.fake.calls == []
+
+
+def test_snapshot_does_not_invent_scenarios(client):
+    r = client.get("/v1/desk/snapshot", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json()["clusters"] == []
+    assert r.json()["activity_baselines"] == []
+    assert r.json()["coverage"][0]["schedule_verified"] is False

@@ -29,3 +29,9 @@ Do not place the shared API key or Supabase secret in browser code. Before multi
 ## Remaining analytic work
 
 Human-authored assessments/relations are available. Automated clustering, local-language translation, activity-baseline computation, retrospective precision/false-positive metrics, notification delivery and provider expansion are not implemented. Existing clusters and activity_baselines tables are preserved for subsequent bounded work. No synthetic backtest should be represented as validated early-warning performance.
+
+## Private Sites interface
+
+The authorized command-center Site uses Sites-hosted ChatGPT authentication and a server-side read-only proxy to this API. `SIGNAL_DESK_READ_TOKEN` is a Sites runtime secret; Render retains only its `SIGNAL_DESK_READ_KEY_SHA256` digest. The Site has no D1 or R2 intelligence store and no Supabase key. Its seven read-only MCP tools use the same proxy and persistent records. Sites owns plugin authentication and access checks, so this path does not require a separately built OAuth server. Public Site access and analyst writes are not enabled.
+
+The snapshot endpoint bounds all returned collections and reports limits. UI counts describe loaded records; `leads_has_more` triggers ID-cursor pagination. Confidence, severity, novelty and independence are never inferred from one another. Missing clusters, hypotheses, baselines and metrics remain explicit empty states.

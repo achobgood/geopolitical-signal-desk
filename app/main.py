@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import os
@@ -20,22 +21,26 @@ bearer = HTTPBearer(auto_error=False)
 requests = deque()
 
 
-async def authorize(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+async def authorize(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
     expected = os.getenv("SIGNAL_DESK_API_KEY", "")
     expected_hash = os.getenv("SIGNAL_DESK_API_KEY_SHA256", "")
     if len(expected) < 32 and (len(expected_hash) != 64 or any(c not in "0123456789abcdef" for c in expected_hash)):
         raise HTTPException(503, "API authentication is not configured")
     supplied = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else ""
+    reader_hash = os.getenv("SIGNAL_DESK_READ_KEY_SHA256", "")
+    is_reader = len(reader_hash) == 64 and secrets.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), reader_hash)
     valid = secrets.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), expected_hash) if expected_hash else secrets.compare_digest(supplied.encode(), expected.encode())
-    if not valid:
+    if not valid and not is_reader:
         raise HTTPException(401, "Invalid or missing API credentials", headers={"WWW-Authenticate": "Bearer"})
+    if is_reader and not valid and request.method != "GET":
+        raise HTTPException(403, "This credential permits read-only access")
     now = time.monotonic()
     while requests and requests[0] < now - 60:
         requests.popleft()
     if len(requests) >= 120:
         raise HTTPException(429, "Request limit reached", headers={"Retry-After": "60"})
     requests.append(now)
-    return "api:shared-key"
+    return "api:reader" if is_reader and not valid else "api:shared-key"
 
 
 @app.middleware("http")
@@ -154,6 +159,23 @@ async def runs(limit: int = Query(50, ge=1, le=100), before: int | None = Query(
 @app.get("/v1/audit-events", dependencies=[Depends(authorize)])
 async def audits(limit: int = Query(50, ge=1, le=100), before: int | None = Query(None, gt=0), store=Depends(get_store)):
     return await store.rows("audit_events", limit=limit, before=before)
+
+
+@app.get("/v1/desk/snapshot", dependencies=[Depends(authorize)])
+async def desk_snapshot(store=Depends(get_store)):
+    """One bounded read for the private UI; no derived confidence or fabricated scenarios."""
+    tables = {"leads": 201, "assessments": 200, "clusters": 100, "lead_relations": 300,
+              "collection_runs": 50, "activity_baselines": 100, "alert_history": 100}
+    values = await asyncio.gather(*(store.rows(table, limit=limit) for table, limit in tables.items()))
+    result = dict(zip(tables, values))
+    result["cluster_leads"] = await store.request("GET", "cluster_leads", params={"select": "*", "order": "linked_at.desc", "limit": "500"})
+    result["leads_has_more"] = len(result["leads"]) > 200
+    result["leads"] = result["leads"][:200]
+    result["limits"] = {**tables, "leads": 200, "cluster_leads": 500}
+    result["coverage"] = [{"provider": "Federal Reserve press RSS", "collector": "federal_reserve_press",
+                           "implemented": True, "scope": "Up to 20 public economic headlines per invocation; no articles or media",
+                           "schedule_verified": False}]
+    return result
 
 
 @app.post("/v1/collect/federal-reserve", dependencies=[Depends(authorize)])

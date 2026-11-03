@@ -11,7 +11,9 @@ Python 3.11 is required. Install `requirements-test.txt` in a virtual environmen
 - `SIGNAL_DESK_API_KEY`: independent random token, at least 32 characters, supplied by callers as `Authorization: Bearer ...`.
 - Alternatively set `SIGNAL_DESK_API_KEY_SHA256` to the lowercase SHA-256 digest of that token. This takes precedence over the plaintext variable; never send the digest as the bearer token. This deployment uses the digest option and keeps the original token only in an ignored, mode-0600 local `.env` file.
 
-All API/data/schema/readiness endpoints require the independent token. `/health` returns process liveness only and discloses no database information. Missing credentials fail closed. `/ready` authenticates and probes the actual Supabase schema/read permission; a healthy process alone does not establish persistence.
+Optional `SIGNAL_DESK_READ_KEY_SHA256` configures an independent reader token. It can call GET endpoints; every POST, including collection and analyst writes, returns 403. The private Sites integration uses this narrower credential.
+
+All API/data/schema/readiness endpoints require an independent token. `/health` returns process liveness only and discloses no database information. Missing credentials fail closed. `/ready` authenticates and probes the actual Supabase schema/read permission; a healthy process alone does not establish persistence.
 
 ## API
 
@@ -27,6 +29,7 @@ All API/data/schema/readiness endpoints require the independent token. `/health`
 | POST | `/v1/relations` | Human-reasoned support, contradiction, duplicate or independence relation |
 | GET | `/v1/collection-runs` | Bounded run history with counts and failures |
 | GET | `/v1/audit-events` | Append-only API write history |
+| GET | `/v1/desk/snapshot` | Bounded read of leads, clusters, relations, assessments, baselines and collection status |
 | POST | `/v1/collect/federal-reserve` | Collect up to 20 official economic RSS headlines |
 
 All list routes use descending integer ID cursors (`before`). The shared key identifies one server operator, not individual end users. Responses are not cached; body size is bounded to 64 KiB and authenticated API traffic to 120 requests/minute per process. This single-instance guard is not a distributed abuse-prevention service.
