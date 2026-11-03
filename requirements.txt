@@ -1,0 +1,18 @@
+# Python 3.11 runtime, fully pinned dependency closure
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.16.0
+certifi==2026.10.23
+click==8.5.0
+defusedxml==0.7.1
+fastapi==0.121.3
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.20
+pydantic-core==2.41.5
+pydantic==2.12.4
+starlette==0.50.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+uvicorn==0.38.0

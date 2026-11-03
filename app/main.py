@@ -1,0 +1,162 @@
+import hashlib
+import json
+import os
+import secrets
+import time
+import uuid
+from collections import deque
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.collector import collect
+from app.models import AssessmentIn, DecisionIn, LeadIn, RelationIn
+from app.store import StoreConflict, StoreUnavailable, get_store
+
+app = FastAPI(title="Geopolitical Signal Desk", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
+bearer = HTTPBearer(auto_error=False)
+requests = deque()
+
+
+async def authorize(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    expected = os.getenv("SIGNAL_DESK_API_KEY", "")
+    expected_hash = os.getenv("SIGNAL_DESK_API_KEY_SHA256", "")
+    if len(expected) < 32 and (len(expected_hash) != 64 or any(c not in "0123456789abcdef" for c in expected_hash)):
+        raise HTTPException(503, "API authentication is not configured")
+    supplied = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else ""
+    valid = secrets.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), expected_hash) if expected_hash else secrets.compare_digest(supplied.encode(), expected.encode())
+    if not valid:
+        raise HTTPException(401, "Invalid or missing API credentials", headers={"WWW-Authenticate": "Bearer"})
+    now = time.monotonic()
+    while requests and requests[0] < now - 60:
+        requests.popleft()
+    if len(requests) >= 120:
+        raise HTTPException(429, "Request limit reached", headers={"Retry-After": "60"})
+    requests.append(now)
+    return "api:shared-key"
+
+
+@app.middleware("http")
+async def boundaries(request: Request, call_next):
+    request.state.request_id = uuid.uuid4().hex
+    if request.method in {"POST", "PUT", "PATCH"}:
+        # Count actual streamed bytes, not just an untrusted Content-Length header.
+        size = 0
+        chunks = []
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > 65536:
+                return JSONResponse({"detail": "Request too large"}, status_code=413)
+            chunks.append(chunk)
+        request._body = b"".join(chunks)
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Request-ID"] = request.state.request_id
+    return response
+
+
+@app.exception_handler(StoreUnavailable)
+async def unavailable(request, exc):
+    return JSONResponse({"detail": "Database unavailable or configuration incomplete", "request_id": request.state.request_id}, status_code=503)
+
+
+@app.exception_handler(StoreConflict)
+async def conflict(request, exc):
+    return JSONResponse({"detail": "Record conflict or missing referenced lead"}, status_code=409)
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid(request, exc):
+    # Default validation errors echo submitted input; avoid reflecting sensitive payloads.
+    return JSONResponse({"detail": [{"location": list(e["loc"]), "type": e["type"]} for e in exc.errors()]}, status_code=422)
+
+
+def fingerprint(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+async def ingest(lead: LeadIn, store, actor):
+    payload = lead.model_dump(mode="json")
+    # A permalink is an observation's identity. Repeat intake never overwrites it.
+    key = "url-v1:" + fingerprint({"url": lead.source_url})
+    return await store.rpc("signal_ingest_v1", {"payload": payload, "p_key": key, "p_actor": actor})
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+@app.get("/openapi.json", dependencies=[Depends(authorize)])
+async def openapi():
+    return app.openapi()
+
+
+@app.get("/ready", dependencies=[Depends(authorize)])
+async def ready(store=Depends(get_store)):
+    result = await store.rpc("signal_ready_v1", {})
+    if result.get("schema_version") != 1 or result.get("rls_tables") != 11 or result.get("end_user_policies") != 0:
+        raise StoreUnavailable()
+    return {"status": "ready", "schema_version": 1}
+
+
+@app.post("/v1/leads")
+async def create_lead(lead: LeadIn, actor=Depends(authorize), store=Depends(get_store)):
+    return await ingest(lead, store, actor)
+
+
+@app.get("/v1/leads", dependencies=[Depends(authorize)])
+async def list_leads(limit: int = Query(50, ge=1, le=100), before: int | None = Query(None, gt=0), store=Depends(get_store)):
+    return await store.rows("leads", limit=limit, before=before)
+
+
+@app.get("/v1/leads/{lead_id}", dependencies=[Depends(authorize)])
+async def get_lead(lead_id: int, store=Depends(get_store)):
+    rows = await store.rows("leads", filters={"id": f"eq.{lead_id}"})
+    if not rows:
+        raise HTTPException(404, "Lead not found")
+    return {"lead": rows[0], "evidence": await store.rows("evidence", filters={"lead_id": f"eq.{lead_id}"}),
+        "assessments": await store.rows("assessments", filters={"lead_id": f"eq.{lead_id}"}),
+        "decisions": await store.rows("alert_history", filters={"lead_id": f"eq.{lead_id}"}),
+        "relations": await store.rows("lead_relations", filters={"or": f"(lead_id.eq.{lead_id},other_lead_id.eq.{lead_id})"})}
+
+
+@app.post("/v1/assessments")
+async def assessment(value: AssessmentIn, actor=Depends(authorize), store=Depends(get_store)):
+    payload = value.model_dump(mode="json")
+    return await store.rpc("signal_record_v1", {"p_kind": "assessment", "payload": payload, "p_key": fingerprint(payload), "p_actor": actor})
+
+
+@app.post("/v1/decisions")
+async def decision(value: DecisionIn, actor=Depends(authorize), store=Depends(get_store)):
+    payload = value.model_dump(mode="json")
+    return await store.rpc("signal_record_v1", {"p_kind": "decision", "payload": payload, "p_key": fingerprint(payload), "p_actor": actor})
+
+
+@app.post("/v1/relations")
+async def relation(value: RelationIn, actor=Depends(authorize), store=Depends(get_store)):
+    return await store.rpc("signal_relation_v1", {"payload": value.model_dump(), "p_actor": actor})
+
+
+@app.get("/v1/assessments", dependencies=[Depends(authorize)])
+async def assessments(limit: int = Query(50, ge=1, le=100), before: int | None = Query(None, gt=0), store=Depends(get_store)):
+    return await store.rows("assessments", limit=limit, before=before)
+
+
+@app.get("/v1/collection-runs", dependencies=[Depends(authorize)])
+async def runs(limit: int = Query(50, ge=1, le=100), before: int | None = Query(None, gt=0), store=Depends(get_store)):
+    return await store.rows("collection_runs", limit=limit, before=before)
+
+
+@app.get("/v1/audit-events", dependencies=[Depends(authorize)])
+async def audits(limit: int = Query(50, ge=1, le=100), before: int | None = Query(None, gt=0), store=Depends(get_store)):
+    return await store.rows("audit_events", limit=limit, before=before)
+
+
+@app.post("/v1/collect/federal-reserve", dependencies=[Depends(authorize)])
+async def collect_fed(store=Depends(get_store)):
+    result = await collect(store, ingest)
+    return JSONResponse(result, status_code=200 if result["run_status"] == "completed" else 502)

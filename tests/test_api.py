@@ -1,0 +1,153 @@
+import asyncio
+import copy
+import json
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app, requests
+from app.store import Store, StoreUnavailable, get_store
+
+AUTH = {"Authorization": "Bearer " + "test-only-key-" * 4}
+LEAD = {"source_url": "https://example.org/public/post/one", "source_platform": "public_social",
+    "observation": "Unverified public allegation", "provenance": {"permitted_public": True, "safety_reviewed": True}}
+
+
+class FakeStore:
+    def __init__(self):
+        self.calls = []
+
+    async def rpc(self, name, payload):
+        self.calls.append((name, payload))
+        if name == "signal_ready_v1":
+            return {"schema_version": 1, "rls_tables": 11, "end_user_policies": 0}
+        return {"created": True, "lead": {"id": 1, "status": "unverified"}}
+
+    async def rows(self, table, **kwargs):
+        self.calls.append((table, kwargs))
+        return []
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setenv("SIGNAL_DESK_API_KEY", "test-only-key-" * 4)
+    requests.clear()
+    fake = FakeStore()
+    app.dependency_overrides[get_store] = lambda: fake
+    with TestClient(app) as client:
+        client.fake = fake
+        yield client
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("path", ["/ready", "/v1/leads", "/v1/assessments", "/v1/collection-runs", "/v1/audit-events", "/openapi.json"])
+def test_no_auth_never_touches_database(client, path):
+    assert client.get(path).status_code == 401
+    assert not client.fake.calls
+
+
+def test_bad_auth_and_public_health(client):
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/ready", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.get("/ready", headers=AUTH).status_code == 200
+
+
+def test_absent_key_is_fail_closed(client, monkeypatch):
+    monkeypatch.delenv("SIGNAL_DESK_API_KEY")
+    assert client.get("/v1/leads", headers=AUTH).status_code == 503
+    assert not client.fake.calls
+
+
+def test_server_can_store_token_digest_only(client, monkeypatch):
+    import hashlib
+    token = "test-only-key-" * 4
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    monkeypatch.delenv("SIGNAL_DESK_API_KEY")
+    monkeypatch.setenv("SIGNAL_DESK_API_KEY_SHA256", digest)
+    assert client.get("/ready", headers=AUTH).status_code == 200
+    assert client.get("/ready", headers={"Authorization": "Bearer " + digest}).status_code == 401
+
+
+def test_raw_unverified_lead_needs_no_verification(client):
+    r = client.post("/v1/leads", headers=AUTH, json=LEAD)
+    assert r.status_code == 200
+    assert r.json()["lead"]["status"] == "unverified"
+    assert client.fake.calls[0][1]["payload"]["provenance"]["media_access"] == "not_inspected"
+
+
+def test_permalink_identity_preserves_queries_and_ignores_fragment(client):
+    for url in ("https://EXAMPLE.org/public/post/one#fragment", LEAD["source_url"]):
+        assert client.post("/v1/leads", headers=AUTH, json={**LEAD, "source_url": url}).status_code == 200
+    assert client.fake.calls[0][1]["p_key"] == client.fake.calls[1][1]["p_key"]
+    client.post("/v1/leads", headers=AUTH, json={**LEAD, "source_url": LEAD["source_url"] + "?post=2"})
+    assert client.fake.calls[2][1]["p_key"] != client.fake.calls[1][1]["p_key"]
+
+
+@pytest.mark.parametrize("change", [
+    {"source_url": "http://example.org/post"}, {"source_url": "https://127.0.0.1/post"},
+    {"source_url": "https://user:secret@example.org/post"}, {"source_url": "https://example.org:8443/post"},
+    {"original_posted_at": "2026-11-03T12:00:00"}, {"private_account_id": "sensitive-test-canary"},
+    {"provenance": {"permitted_public": False, "safety_reviewed": True}},
+    {"provenance": {"permitted_public": True, "safety_reviewed": False}},
+    {"provenance": {"permitted_public": True, "safety_reviewed": True, "media_access": "inspected"}},
+])
+def test_invalid_input_rejected_without_echo(client, change):
+    r = client.post("/v1/leads", headers=AUTH, json={**LEAD, **change})
+    assert r.status_code == 422
+    assert "sensitive-test-canary" not in r.text
+    assert not client.fake.calls
+
+
+def test_size_and_pagination_bounds(client):
+    assert client.post("/v1/leads", headers=AUTH, content="x" * 65537).status_code == 413
+    assert client.get("/v1/leads?limit=101", headers=AUTH).status_code == 422
+    assert client.get("/v1/leads?before=5&limit=2", headers=AUTH).status_code == 200
+    assert client.fake.calls[-1][1]["before"] == 5
+
+
+def test_security_headers_and_no_public_docs(client):
+    r = client.get("/health")
+    assert r.headers["cache-control"] == "no-store"
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert client.get("/docs").status_code == 404
+
+
+def test_assessment_requires_alternatives_and_falsification(client):
+    assert client.post("/v1/assessments", headers=AUTH, json={"lead_id": 1, "scenario": "test", "rationale": "test"}).status_code == 422
+    payload = {"lead_id": 1, "scenario": "test", "rationale": "test", "alternative_explanations": "Routine event",
+        "falsification_criteria": "Contradicting official release", "analysis_threshold": "Analyst-selected review"}
+    assert client.post("/v1/assessments", headers=AUTH, json=payload).status_code == 200
+
+
+def test_database_failure_redacted(client):
+    class BrokenStore:
+        async def rpc(self, *args):
+            raise StoreUnavailable("secret-must-not-appear")
+    app.dependency_overrides[get_store] = BrokenStore
+    r = client.get("/ready", headers=AUTH)
+    assert r.status_code == 503
+    assert "secret-must-not-appear" not in r.text
+
+
+@pytest.mark.parametrize("key,has_bearer", [("sb_secret_test", False), ("legacy-jwt-test", True)])
+def test_key_headers_and_no_redirects(monkeypatch, key, has_bearer):
+    monkeypatch.setenv("SUPABASE_URL", "https://uzqpndpuqubfygjwnhiv.supabase.co")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", key)
+    original = httpx.AsyncClient
+    async def handle(request):
+        assert ("authorization" in request.headers) is has_bearer
+        assert request.headers["apikey"] == key
+        return httpx.Response(302, headers={"Location": "https://example.org/steal"})
+    def client_factory(**kwargs):
+        assert kwargs["follow_redirects"] is False
+        return original(transport=httpx.MockTransport(handle), **kwargs)
+    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+    with pytest.raises(StoreUnavailable):
+        asyncio.run(Store().rows("leads"))
+
+
+def test_rate_limit(client):
+    for _ in range(120):
+        assert client.get("/v1/leads", headers=AUTH).status_code == 200
+    assert client.get("/v1/leads", headers=AUTH).status_code == 429

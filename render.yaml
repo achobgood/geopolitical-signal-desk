@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: geopolitical-signal-desk
+    runtime: docker
+    plan: free
+    region: virginia
+    repo: https://github.com/achobgood/geopolitical-signal-desk
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        value: https://uzqpndpuqubfygjwnhiv.supabase.co
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SIGNAL_DESK_API_KEY
+        generateValue: true

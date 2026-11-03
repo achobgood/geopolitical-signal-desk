@@ -1,0 +1,1227 @@
+{
+  "tables": [
+    {
+      "name": "public.leads",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "source_url",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "source_platform",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "observation",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "status",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'unverified'::text"
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        },
+        {
+          "name": "canonical_key",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "source_reference",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "source_kind",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'unknown'::text"
+        },
+        {
+          "name": "broad_region",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'unspecified'::text"
+        },
+        {
+          "name": "original_posted_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "claimed_event_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "capture_time_note",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "evidence_type",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'text'::text"
+        },
+        {
+          "name": "observed_vs_inferred",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "media_actually_inspected",
+          "data_type": "boolean",
+          "format": "bool",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "false"
+        },
+        {
+          "name": "confidence",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'low'::text"
+        },
+        {
+          "name": "alternative_explanations",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "strengthening_evidence",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "falsifying_evidence",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "reliability_note",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "source_independence_note",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "last_reviewed_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_key_constraints": [
+        {
+          "name": "cluster_leads_lead_id_fkey",
+          "source_table": "public.cluster_leads",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_lead_id_fkey",
+          "source_table": "public.evidence",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "lead_relations_lead_id_fkey",
+          "source_table": "public.lead_relations",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "lead_relations_other_lead_id_fkey",
+          "source_table": "public.lead_relations",
+          "source_columns": [
+            "other_lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessments_lead_id_fkey",
+          "source_table": "public.assessments",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "alert_history_lead_id_fkey",
+          "source_table": "public.alert_history",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.sources",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "platform",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "public_url",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "account_type",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'unknown'::text"
+        },
+        {
+          "name": "language_code",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "broad_region",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "first_seen_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        },
+        {
+          "name": "reliability_note",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_key_constraints": [
+        {
+          "name": "evidence_source_id_fkey",
+          "source_table": "public.evidence",
+          "source_columns": [
+            "source_id"
+          ],
+          "target_table": "public.sources",
+          "target_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.evidence",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "lead_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "source_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "public_url",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "medium",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'text'::text"
+        },
+        {
+          "name": "posted_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "capture_time_note",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "access_status",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'not_inspected'::text",
+          "check": "access_status = ANY (ARRAY['inspected'::text, 'inaccessible'::text, 'metadata_only'::text, 'not_inspected'::text])"
+        },
+        {
+          "name": "observations",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "provenance_note",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "file_hash_sha256",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_key_constraints": [
+        {
+          "name": "evidence_source_id_fkey",
+          "source_table": "public.evidence",
+          "source_columns": [
+            "source_id"
+          ],
+          "target_table": "public.sources",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_lead_id_fkey",
+          "source_table": "public.evidence",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.clusters",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "title",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "broad_region",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'unspecified'::text"
+        },
+        {
+          "name": "scenario",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "competing_explanations",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "status",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'watch'::text",
+          "check": "status = ANY (ARRAY['watch'::text, 'developing'::text, 'contradicted'::text, 'resolved'::text, 'archived'::text])"
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_key_constraints": [
+        {
+          "name": "cluster_leads_cluster_id_fkey",
+          "source_table": "public.cluster_leads",
+          "source_columns": [
+            "cluster_id"
+          ],
+          "target_table": "public.clusters",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessments_cluster_id_fkey",
+          "source_table": "public.assessments",
+          "source_columns": [
+            "cluster_id"
+          ],
+          "target_table": "public.clusters",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "alert_history_cluster_id_fkey",
+          "source_table": "public.alert_history",
+          "source_columns": [
+            "cluster_id"
+          ],
+          "target_table": "public.clusters",
+          "target_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.cluster_leads",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "cluster_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "lead_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "relationship",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'related'::text"
+        },
+        {
+          "name": "rationale",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "linked_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        }
+      ],
+      "primary_keys": [
+        "cluster_id",
+        "lead_id"
+      ],
+      "foreign_key_constraints": [
+        {
+          "name": "cluster_leads_cluster_id_fkey",
+          "source_table": "public.cluster_leads",
+          "source_columns": [
+            "cluster_id"
+          ],
+          "target_table": "public.clusters",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "cluster_leads_lead_id_fkey",
+          "source_table": "public.cluster_leads",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.lead_relations",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "lead_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "other_lead_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "relation_type",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "check": "relation_type = ANY (ARRAY['same_origin'::text, 'duplicate'::text, 'possibly_independent'::text, 'supports'::text, 'contradicts'::text, 'related'::text])"
+        },
+        {
+          "name": "rationale",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_key_constraints": [
+        {
+          "name": "lead_relations_other_lead_id_fkey",
+          "source_table": "public.lead_relations",
+          "source_columns": [
+            "other_lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "lead_relations_lead_id_fkey",
+          "source_table": "public.lead_relations",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.assessments",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "lead_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "cluster_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "scenario",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "rationale",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "confidence",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'low'::text"
+        },
+        {
+          "name": "counterevidence",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "market_hypothesis",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "alternative_explanations",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_key_constraints": [
+        {
+          "name": "assessments_cluster_id_fkey",
+          "source_table": "public.assessments",
+          "source_columns": [
+            "cluster_id"
+          ],
+          "target_table": "public.clusters",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessments_lead_id_fkey",
+          "source_table": "public.assessments",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.alert_history",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "lead_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "cluster_id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "decision",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "check": "decision = ANY (ARRAY['alert'::text, 'watch'::text, 'no_alert'::text, 'correction'::text, 'retraction'::text])"
+        },
+        {
+          "name": "rationale",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "confidence",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'low'::text"
+        },
+        {
+          "name": "market_scenario",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_key_constraints": [
+        {
+          "name": "alert_history_lead_id_fkey",
+          "source_table": "public.alert_history",
+          "source_columns": [
+            "lead_id"
+          ],
+          "target_table": "public.leads",
+          "target_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "alert_history_cluster_id_fkey",
+          "source_table": "public.alert_history",
+          "source_columns": [
+            "cluster_id"
+          ],
+          "target_table": "public.clusters",
+          "target_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.collection_runs",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "collector",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "started_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        },
+        {
+          "name": "finished_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "run_status",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "'running'::text",
+          "check": "run_status = ANY (ARRAY['running'::text, 'completed'::text, 'partial'::text, 'failed'::text])"
+        },
+        {
+          "name": "observations_seen",
+          "data_type": "integer",
+          "format": "int4",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "0"
+        },
+        {
+          "name": "new_leads",
+          "data_type": "integer",
+          "format": "int4",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "0"
+        },
+        {
+          "name": "access_limitations",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "error_summary",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ]
+    },
+    {
+      "name": "public.activity_baselines",
+      "rls_enabled": true,
+      "rows": 0,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "format": "int8",
+          "options": [
+            "identity",
+            "updatable"
+          ],
+          "identity_generation": "ALWAYS"
+        },
+        {
+          "name": "broad_region",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "metric_name",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "period_start",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "period_end",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ]
+        },
+        {
+          "name": "metric_value",
+          "data_type": "numeric",
+          "format": "numeric",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "metric_unit",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "baseline_method",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "''::text"
+        },
+        {
+          "name": "source_url",
+          "data_type": "text",
+          "format": "text",
+          "options": [
+            "nullable",
+            "updatable"
+          ]
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "format": "timestamptz",
+          "options": [
+            "updatable"
+          ],
+          "default_value": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ]
+    }
+  ]
+}
