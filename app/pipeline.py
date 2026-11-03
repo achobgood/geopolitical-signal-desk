@@ -7,6 +7,7 @@ import httpx
 
 from app.models import AssessmentIn, ClusterIn, RelationIn
 from app.providers import PROVIDERS
+from app.social_recovery import recover_social
 
 
 def now():return datetime.now(timezone.utc).isoformat()
@@ -76,7 +77,11 @@ async def run_pipeline(store,ingest,run_key,trigger):
         # Sequential provider pacing bounds both outbound calls and database concurrency.
         async with asyncio.timeout(150):
             for provider in PROVIDERS.values():results.append(await provider_run(provider,store,ingest))
-            analysis=await correlate_and_triage(store)
+            social = await recover_social(store)
+            analysis = {"social_recovery": social}
+            analysis.update(await correlate_and_triage(store))
+            if social["write_failures"]:
+                status = "partial"
         if any(r["status"] in ("failed","partial") for r in results):status="partial"
     except Exception:
         status="partial" if results else "failed";error="Pipeline did not complete; inspect run history and provider limitations"

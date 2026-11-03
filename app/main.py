@@ -222,6 +222,11 @@ async def desk_snapshot(store=Depends(get_store)):
     return result
 
 
+@app.get("/v1/social-recovery", dependencies=[Depends(authorize)])
+async def social_recovery_status(store=Depends(get_store)):
+    return await store.rpc("signal_social_status_v1", {})
+
+
 @app.get("/v1/providers", dependencies=[Depends(authorize)])
 async def providers():
     return coverage()
