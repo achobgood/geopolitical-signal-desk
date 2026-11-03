@@ -165,7 +165,7 @@ class CisaKEV:
 
 PROVIDERS={p.capabilities.name:p for p in [MastodonDiscovery(),UNGeneva(),CisaKEV()]}
 BLOCKED={
-    "external_web_search":{"category":"search-led public discovery","status":"caller_submitted_intake","reason":"Operator-authenticated search intake preserves queries and original links. Recurring search runner/writeback not connected; current Site MCP is read-only."},
+    "external_web_search":{"category":"search-led public discovery","status":"caller_submitted_intake","reason":"Owner-only MCP search intake preserves queries and original links. A one-time unattended writeback receipt is recorded; ongoing recurring web research is not enabled."},
     "un_middle_east":{"category":"official geopolitical","status":"access_failed","reason":"UN News feed returned HTTP 404 from deployed Render runtime despite local HTTP200. Failure retained; no access-restriction bypass. UN Geneva official feed is a separately permitted source."},
     "x":{"category":"public X","status":"authorization_required","reason":"Written X approval for intelligence/sensitive-event monitoring plus an entitled API account required; no scraping fallback"},
     "telegram":{"category":"public Telegram","status":"authorization_required","reason":"AI aggregation/deployment restrictions require documented permission/consent; API credentials alone are insufficient"},
