@@ -14,6 +14,14 @@ create table if not exists private.signal_dispatches (
 );
 alter table private.signal_dispatches enable row level security;
 revoke all on private.signal_dispatches from public,anon,authenticated,service_role;
+create or replace function private.signal_response_complete(p_status integer,p_content text)
+returns boolean language plpgsql immutable security invoker set search_path='' as $$
+begin
+ if p_status is distinct from 200 then return false;end if;
+ return coalesce(p_content::jsonb->'run'->>'run_status'='completed',false);
+exception when invalid_text_representation then return false;
+end $$;
+revoke all on function private.signal_response_complete(integer,text) from public,anon,authenticated,service_role;
 create or replace function private.dispatch_signal_collection()
 returns bigint language plpgsql security invoker set search_path='' as $$
 declare token text; req bigint; k text;
@@ -22,7 +30,7 @@ begin
  from net._http_response r where r.id=d.request_id and d.status_code is null;
  k:='cron:'||to_char(now() at time zone 'UTC','YYYYMMDDHH24')||':'||floor(extract(minute from now() at time zone 'UTC')/15)::text;
  select d.request_id into req from private.signal_dispatches d join net._http_response r on r.id=d.request_id
- where d.run_key=k and r.status_code=200 and r.content::jsonb->'run'->>'run_status'='completed' order by d.dispatched_at desc limit 1;
+ where d.run_key=k and private.signal_response_complete(r.status_code,r.content) order by d.dispatched_at desc limit 1;
  if req is not null then return req;end if;
  select decrypted_secret into strict token from vault.decrypted_secrets where name='signal_desk_scheduler';
  req:=net.http_post(url:='https://geopolitical-signal-desk.onrender.com/v1/pipeline/scheduled',
