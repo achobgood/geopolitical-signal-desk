@@ -188,3 +188,14 @@ def test_scheduler_credential_has_no_general_api_access(client,monkeypatch):
     assert client.get('/v1/leads',headers=headers).status_code==401
     assert client.post('/v1/leads',headers=headers,json=LEAD).status_code==401
     assert client.post('/v1/pipeline/scheduled',headers={'Authorization':'Bearer wrong'},json={'run_key':'test:lease'}).status_code==401
+
+
+def test_search_intake_is_not_a_public_or_reader_write_route(client,monkeypatch):
+    import hashlib
+    body={'batch_id':'test:empty-search','provider':'fixture','searched_at':'2026-11-03T12:00:00Z',
+          'queries':[{'id':'test','query':'public infrastructure report'}],'hits':[],'run_limitations':'Fixture only'}
+    reader='test-reader-only-token-'*3
+    monkeypatch.setenv('SIGNAL_DESK_READ_KEY_SHA256',hashlib.sha256(reader.encode()).hexdigest())
+    assert client.post('/v1/search-intake',json=body).status_code==401
+    assert client.post('/v1/search-intake',headers={'Authorization':'Bearer '+reader},json=body).status_code==403
+    assert client.fake.calls==[]

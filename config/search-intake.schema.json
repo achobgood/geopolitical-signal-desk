@@ -1,0 +1,195 @@
+{
+  "$defs": {
+    "SearchHit": {
+      "additionalProperties": false,
+      "properties": {
+        "query_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Query Id",
+          "type": "string"
+        },
+        "source_url": {
+          "maxLength": 2000,
+          "title": "Source Url",
+          "type": "string"
+        },
+        "source_title": {
+          "maxLength": 250,
+          "minLength": 1,
+          "title": "Source Title",
+          "type": "string"
+        },
+        "observation": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Observation",
+          "type": "string"
+        },
+        "broad_region": {
+          "default": "unspecified",
+          "maxLength": 100,
+          "title": "Broad Region",
+          "type": "string"
+        },
+        "source_kind": {
+          "default": "unknown",
+          "enum": [
+            "official",
+            "public_social",
+            "news",
+            "aggregate",
+            "unknown"
+          ],
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "account_type": {
+          "default": "unknown",
+          "enum": [
+            "official",
+            "journalist",
+            "organization",
+            "eyewitness",
+            "aggregator",
+            "unknown"
+          ],
+          "title": "Account Type",
+          "type": "string"
+        },
+        "original_page_access": {
+          "enum": [
+            "snippet_only",
+            "inaccessible",
+            "text_inspected"
+          ],
+          "title": "Original Page Access",
+          "type": "string"
+        },
+        "publication_time_note": {
+          "default": "Publication time unknown; discovery time is separate",
+          "maxLength": 500,
+          "title": "Publication Time Note",
+          "type": "string"
+        },
+        "limitations": {
+          "maxLength": 800,
+          "minLength": 1,
+          "title": "Limitations",
+          "type": "string"
+        },
+        "permitted_public": {
+          "const": true,
+          "title": "Permitted Public",
+          "type": "boolean"
+        },
+        "safety_reviewed": {
+          "const": true,
+          "title": "Safety Reviewed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "query_id",
+        "source_url",
+        "source_title",
+        "observation",
+        "original_page_access",
+        "limitations",
+        "permitted_public",
+        "safety_reviewed"
+      ],
+      "title": "SearchHit",
+      "type": "object"
+    },
+    "SearchQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "query": {
+          "maxLength": 800,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "language": {
+          "default": "und",
+          "maxLength": 20,
+          "title": "Language",
+          "type": "string"
+        },
+        "requested_window": {
+          "default": "Not specified",
+          "maxLength": 200,
+          "title": "Requested Window",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "query"
+      ],
+      "title": "SearchQuery",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "batch_id": {
+      "maxLength": 100,
+      "minLength": 3,
+      "pattern": "^[a-zA-Z0-9:_-]+$",
+      "title": "Batch Id",
+      "type": "string"
+    },
+    "provider": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "searched_at": {
+      "format": "date-time",
+      "title": "Searched At",
+      "type": "string"
+    },
+    "queries": {
+      "items": {
+        "$ref": "#/$defs/SearchQuery"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Queries",
+      "type": "array"
+    },
+    "hits": {
+      "items": {
+        "$ref": "#/$defs/SearchHit"
+      },
+      "maxItems": 20,
+      "title": "Hits",
+      "type": "array"
+    },
+    "run_limitations": {
+      "maxLength": 1500,
+      "minLength": 1,
+      "title": "Run Limitations",
+      "type": "string"
+    }
+  },
+  "required": [
+    "batch_id",
+    "provider",
+    "searched_at",
+    "queries",
+    "run_limitations"
+  ],
+  "title": "SearchBatch",
+  "type": "object"
+}

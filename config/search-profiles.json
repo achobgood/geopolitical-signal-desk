@@ -1,0 +1,99 @@
+{
+  "status": "prepared_for_external_search_runner",
+  "background_search_enabled": false,
+  "limits": {
+    "queries_per_run": 8,
+    "retained_hits_per_run": 20
+  },
+  "profiles": [
+    {
+      "id": "gulf_discovery",
+      "region": "Iran / Gulf",
+      "languages": [
+        "en",
+        "ar",
+        "fa"
+      ],
+      "topics": [
+        "civilian service disruption",
+        "public shipping disruption reports",
+        "diplomatic signals",
+        "local public observations"
+      ],
+      "collection_rule": "Retain a permitted single-source allegation without requiring corroboration. No sensitive military positions/routes/times or private identifiers.",
+      "query_templates": {
+        "en": "Iran Gulf civilian internet power shipping disruption public reports {date}",
+        "ar": "إيران الخليج انقطاع الإنترنت الكهرباء اضطراب الشحن {date}",
+        "fa": "ایران خلیج فارس قطعی اینترنت برق اختلال کشتیرانی {date}"
+      }
+    },
+    {
+      "id": "europe_discovery",
+      "region": "Europe / NATO / Russia",
+      "languages": [
+        "en",
+        "uk",
+        "ru"
+      ],
+      "topics": [
+        "public infrastructure outages",
+        "civilian disruption",
+        "diplomatic developments"
+      ],
+      "collection_rule": "No current unit locations or operational movement tracking.",
+      "query_templates": {
+        "en": "Russia Ukraine NATO civilian infrastructure outage diplomatic statement {date}",
+        "uk": "Україна перебої електроенергії інтернету офіційна заява {date}",
+        "ru": "Россия перебои интернета электричества дипломатическое заявление {date}"
+      }
+    },
+    {
+      "id": "taiwan_discovery",
+      "region": "Taiwan / China",
+      "languages": [
+        "en",
+        "zh"
+      ],
+      "topics": [
+        "civilian infrastructure",
+        "public aggregate transport disruption",
+        "official notices",
+        "community observations"
+      ],
+      "collection_rule": "No military routes, schedules, identities or precise current positions.",
+      "query_templates": {
+        "en": "Taiwan China civilian internet power outage diplomatic statement {date}",
+        "zh": "台灣 網路中斷 停電 民用交通 中國 外交 聲明 {date}"
+      }
+    },
+    {
+      "id": "cuba_discovery",
+      "region": "Cuba / Caribbean",
+      "languages": [
+        "en",
+        "es"
+      ],
+      "topics": [
+        "electricity/internet service reports",
+        "public community observations",
+        "official explanations",
+        "contradicting evidence"
+      ],
+      "collection_rule": "Allegations and indexed snippets remain unverified. Preserve source and event-time uncertainty.",
+      "query_templates": {
+        "en": "Cuba public reports electricity internet outage {date}",
+        "es": "Cuba apagón corte internet reportes locales {date}"
+      }
+    }
+  ],
+  "provenance_rules": [
+    "Store exact query and search time",
+    "Discovery time is not publication or event time",
+    "Distinguish snippet-only, inaccessible and inspected text",
+    "Always mark media uninspected unless separately inspected",
+    "Search ranking or multiple URLs do not establish independence",
+    "Search discovery does not grant direct social-platform API coverage"
+  ],
+  "scheduling_boundary": "Keep Geopolitical Escalation Watch II unchanged. Do not create a duplicate ChatGPT automation. Test an authorized write path and unattended runner before changing scheduled behavior.",
+  "query_validation": "Prepared templates, not validated recall or complete local-language coverage; a date in a query does not prove a result is fresh."
+}

@@ -4,6 +4,8 @@ Provenance-first, server-only early-warning backend using the **existing** Supab
 
 ## Current intelligence milestone
 
+A search-led intake path now accepts reviewed research from ChatGPT or another authorized search runner. It preserves the queries and inspection state, reuses persistent ingestion, and feeds the existing Site. See [search-led collection](docs/search-led-collection.md). This does not activate background web search or require a Twitter API key. Recurring search writeback remains a separate acceptance step.
+
 The multi-source framework is implemented; it is **not a validated geopolitical prediction system**. Active adapters cover public Mastodon metadata discovery, UN Geneva geopolitical briefing metadata, and CISA KEV structured catalog data. These are separate source classes; a cyber catalog entry does not corroborate a geopolitical event. Original X/Telegram/Reddit/Meta, local-community, maritime/aviation and energy/market requirements are inventoried with exact access gaps in [the coverage matrix](docs/coverage-matrix.md). Restricted platforms are not scraped.
 
 The pipeline records persistent lead history, cursors, failure/pacing receipts, same-origin relationships, topic-review cluster memberships and labeled automated triage. Topic grouping is not independent corroboration. An inspected historical Yemen investigation has three original evidence links, explicit source-dependence notes, a saved low-confidence analyst assessment and a watch decision; it is not a fresh escalation warning. The original Federal Reserve observations remain ingestion POC data.

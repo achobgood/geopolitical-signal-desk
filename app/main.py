@@ -17,6 +17,7 @@ from app.models import AssessmentIn, DecisionIn, LeadIn, RelationIn, ClusterIn, 
 from app.store import StoreConflict, StoreUnavailable, get_store
 from app.pipeline import run_pipeline
 from app.providers import coverage
+from app.search_intake import SearchBatch, import_search_batch
 
 app = FastAPI(title="Geopolitical Signal Desk", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 bearer = HTTPBearer(auto_error=False)
@@ -113,6 +114,12 @@ async def ready(store=Depends(get_store)):
 @app.post("/v1/leads")
 async def create_lead(lead: LeadIn, actor=Depends(authorize), store=Depends(get_store)):
     return await ingest(lead, store, actor)
+
+
+@app.post("/v1/search-intake")
+async def search_intake(batch: SearchBatch,actor=Depends(authorize),store=Depends(get_store)):
+    result=await import_search_batch(batch,store,ingest,actor)
+    return JSONResponse(result,status_code=200 if result["status"]=="completed" else 503)
 
 
 @app.get("/v1/leads", dependencies=[Depends(authorize)])
