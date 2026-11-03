@@ -1,5 +1,366 @@
 {
   "$defs": {
+    "EventReview": {
+      "additionalProperties": false,
+      "properties": {
+        "review_id": {
+          "maxLength": 100,
+          "minLength": 3,
+          "pattern": "^[a-zA-Z0-9:_-]+$",
+          "title": "Review Id",
+          "type": "string"
+        },
+        "event_key": {
+          "maxLength": 150,
+          "minLength": 3,
+          "pattern": "^[a-zA-Z0-9:_-]+$",
+          "title": "Event Key",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "broad_region": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Broad Region",
+          "type": "string"
+        },
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date-time",
+          "title": "Period End",
+          "type": "string"
+        },
+        "historical_backfill": {
+          "default": false,
+          "title": "Historical Backfill",
+          "type": "boolean"
+        },
+        "report_provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReportProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "summary": {
+          "maxLength": 2500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceUse"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "relations": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRelation"
+          },
+          "maxItems": 30,
+          "title": "Relations",
+          "type": "array"
+        },
+        "hypotheses": {
+          "items": {
+            "$ref": "#/$defs/Hypothesis"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Hypotheses",
+          "type": "array"
+        },
+        "independence_assessment": {
+          "maxLength": 2500,
+          "minLength": 1,
+          "title": "Independence Assessment",
+          "type": "string"
+        },
+        "baseline_comparison": {
+          "maxLength": 2500,
+          "minLength": 1,
+          "title": "Baseline Comparison",
+          "type": "string"
+        },
+        "analysis_threshold": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Analysis Threshold",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/ReviewDecision"
+        }
+      },
+      "required": [
+        "review_id",
+        "event_key",
+        "title",
+        "broad_region",
+        "as_of",
+        "period_start",
+        "period_end",
+        "summary",
+        "evidence",
+        "hypotheses",
+        "independence_assessment",
+        "baseline_comparison",
+        "analysis_threshold",
+        "decision"
+      ],
+      "title": "EventReview",
+      "type": "object"
+    },
+    "EvidenceRelation": {
+      "additionalProperties": false,
+      "properties": {
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "other_source_url": {
+          "title": "Other Source Url",
+          "type": "string"
+        },
+        "relation_type": {
+          "enum": [
+            "same_origin",
+            "possibly_independent",
+            "supports",
+            "contradicts",
+            "related"
+          ],
+          "title": "Relation Type",
+          "type": "string"
+        },
+        "rationale": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_url",
+        "other_source_url",
+        "relation_type",
+        "rationale"
+      ],
+      "title": "EvidenceRelation",
+      "type": "object"
+    },
+    "EvidenceUse": {
+      "additionalProperties": false,
+      "properties": {
+        "source_url": {
+          "maxLength": 2000,
+          "title": "Source Url",
+          "type": "string"
+        },
+        "origin_group": {
+          "default": "unknown",
+          "maxLength": 150,
+          "title": "Origin Group",
+          "type": "string"
+        },
+        "origin_basis": {
+          "maxLength": 1200,
+          "minLength": 1,
+          "title": "Origin Basis",
+          "type": "string"
+        },
+        "limitations": {
+          "maxLength": 1200,
+          "minLength": 1,
+          "title": "Limitations",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_url",
+        "origin_basis",
+        "limitations"
+      ],
+      "title": "EvidenceUse",
+      "type": "object"
+    },
+    "Hypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 100,
+          "minLength": 3,
+          "pattern": "^[a-zA-Z0-9:_-]+$",
+          "title": "Key",
+          "type": "string"
+        },
+        "scenario": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Scenario",
+          "type": "string"
+        },
+        "rationale": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "supporting_urls": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Supporting Urls",
+          "type": "array"
+        },
+        "contradicting_urls": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Contradicting Urls",
+          "type": "array"
+        },
+        "alternative_explanations": {
+          "maxLength": 2500,
+          "minLength": 1,
+          "title": "Alternative Explanations",
+          "type": "string"
+        },
+        "counterevidence": {
+          "maxLength": 2500,
+          "minLength": 1,
+          "title": "Counterevidence",
+          "type": "string"
+        },
+        "strengthening_conditions": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Strengthening Conditions",
+          "type": "string"
+        },
+        "falsification_criteria": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Falsification Criteria",
+          "type": "string"
+        },
+        "conditional_market_hypothesis": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Conditional Market Hypothesis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "scenario",
+        "rationale",
+        "confidence",
+        "alternative_explanations",
+        "counterevidence",
+        "strengthening_conditions",
+        "falsification_criteria"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    },
+    "ReportProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "report_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Report Id",
+          "type": "string"
+        },
+        "report_as_of": {
+          "format": "date-time",
+          "title": "Report As Of",
+          "type": "string"
+        },
+        "limitations": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Limitations",
+          "type": "string"
+        }
+      },
+      "required": [
+        "report_id",
+        "report_as_of",
+        "limitations"
+      ],
+      "title": "ReportProvenance",
+      "type": "object"
+    },
+    "ReviewDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "alert",
+            "watch",
+            "no_alert",
+            "correction",
+            "retraction"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "rationale": {
+          "maxLength": 2500,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "notification_threshold": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Notification Threshold",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "rationale",
+        "notification_threshold"
+      ],
+      "title": "ReviewDecision",
+      "type": "object"
+    },
     "SearchHit": {
       "additionalProperties": false,
       "properties": {
@@ -71,6 +432,32 @@
           "maxLength": 500,
           "title": "Publication Time Note",
           "type": "string"
+        },
+        "original_posted_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original Posted At"
+        },
+        "claimed_event_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claimed Event At"
         },
         "limitations": {
           "maxLength": 800,
@@ -197,6 +584,23 @@
       "maxLength": 200,
       "title": "Execution Reference",
       "type": "string"
+    },
+    "purpose": {
+      "default": "monitoring",
+      "enum": [
+        "monitoring",
+        "historical_backfill"
+      ],
+      "title": "Purpose",
+      "type": "string"
+    },
+    "analyses": {
+      "items": {
+        "$ref": "#/$defs/EventReview"
+      },
+      "maxItems": 4,
+      "title": "Analyses",
+      "type": "array"
     }
   },
   "required": [

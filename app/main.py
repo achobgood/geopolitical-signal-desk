@@ -18,6 +18,7 @@ from app.store import StoreConflict, StoreUnavailable, get_store
 from app.pipeline import run_pipeline
 from app.providers import coverage
 from app.search_intake import SearchBatch, import_search_batch
+from app.analysis import EventReview, persist_review
 
 app = FastAPI(title="Geopolitical Signal Desk", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 bearer = HTTPBearer(auto_error=False)
@@ -136,8 +137,13 @@ async def get_lead(lead_id: int, store=Depends(get_store)):
     rows = await store.rows("leads", filters={"id": f"eq.{lead_id}"})
     if not rows:
         raise HTTPException(404, "Lead not found")
+    anchored=await store.rows("assessments",filters={"lead_id":f"eq.{lead_id}"})
+    memberships=await store.request("GET","cluster_leads",params={"select":"cluster_id","lead_id":f"eq.{lead_id}","limit":"100"})
+    cluster_ids=[r["cluster_id"] for r in memberships]
+    linked=await store.rows("assessments",limit=100,filters={"cluster_id":"in.("+",".join(map(str,cluster_ids))+")"}) if cluster_ids else []
+    assessments=list({a["id"]:a for a in anchored+linked}.values())
     return {"lead": rows[0], "evidence": await store.rows("evidence", filters={"lead_id": f"eq.{lead_id}"}),
-        "assessments": await store.rows("assessments", filters={"lead_id": f"eq.{lead_id}"}),
+        "assessments": assessments,
         "decisions": await store.rows("alert_history", filters={"lead_id": f"eq.{lead_id}"}),
         "relations": await store.rows("lead_relations", filters={"or": f"(lead_id.eq.{lead_id},other_lead_id.eq.{lead_id})"})}
 
@@ -146,6 +152,27 @@ async def get_lead(lead_id: int, store=Depends(get_store)):
 async def assessment(value: AssessmentIn, actor=Depends(authorize), store=Depends(get_store)):
     payload = value.model_dump(mode="json")
     return await store.rpc("signal_record_v1", {"p_kind": "assessment", "payload": payload, "p_key": fingerprint(payload), "p_actor": actor})
+
+
+@app.post("/v1/reviews")
+async def review(value: EventReview, actor=Depends(authorize), store=Depends(get_store)):
+    try:
+        return await persist_review(value, store, actor)
+    except ValueError:
+        raise HTTPException(409, "Collect referenced evidence before reviewing it")
+
+
+@app.get("/v1/clusters/{cluster_id}", dependencies=[Depends(authorize)])
+async def cluster_detail(cluster_id: int, store=Depends(get_store)):
+    rows=await store.rows("clusters", limit=1, filters={"id":f"eq.{cluster_id}"})
+    if not rows:
+        raise HTTPException(404,"Cluster not found")
+    links=await store.request("GET","cluster_leads",params={"select":"*","cluster_id":f"eq.{cluster_id}","limit":"100"})
+    ids=[r["lead_id"] for r in links]
+    observations=await store.rows("leads",limit=100,filters={"id":"in.("+",".join(map(str,ids))+")"}) if ids else []
+    reviews=await store.rows("assessments",limit=100,filters={"cluster_id":f"eq.{cluster_id}"})
+    return {"cluster":rows[0],"linked_lead_ids":ids,"observations":observations,"assessments":reviews,
+            "limitations":"At most 100 linked leads and assessment versions; source families are not independent confirmations. Decisions record intent; no external delivery."}
 
 
 @app.post("/v1/decisions")

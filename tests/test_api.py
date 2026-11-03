@@ -216,3 +216,13 @@ def test_search_writer_scope_is_limited_to_intake(client,monkeypatch):
     body={'batch_id':'test:empty-intake','provider':'fixture','searched_at':'2026-11-03T12:00:00Z','queries':[{'id':'test','query':'public source'}],'hits':[],'run_limitations':'Synthetic local fixture'}
     r=client.post('/v1/search-intake',headers=headers,json=body)
     assert r.status_code==200 and r.json()['run_id']==123
+
+def test_review_routes_remain_protected_and_missing_evidence_is_not_silently_created(client,monkeypatch):
+    from test_analysis import review_payload
+    import hashlib
+    token='test-intake-only-key-'*3
+    monkeypatch.setenv('SIGNAL_DESK_SEARCH_WRITER_KEY_SHA256',hashlib.sha256(token.encode()).hexdigest())
+    assert client.get('/v1/clusters/1').status_code==401
+    assert client.post('/v1/reviews',json=review_payload()).status_code==401
+    assert client.post('/v1/reviews',headers={'Authorization':'Bearer '+token},json=review_payload()).status_code==403
+    assert client.post('/v1/reviews',headers=AUTH,json=review_payload()).status_code==409

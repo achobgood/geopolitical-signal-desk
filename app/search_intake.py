@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from app.models import StrictModel, LeadIn, Provenance, public_url
+from app.analysis import EventReview, persist_review, aware
 
 
 class SearchQuery(StrictModel):
@@ -26,10 +27,13 @@ class SearchHit(StrictModel):
     account_type: Literal["official","journalist","organization","eyewitness","aggregator","unknown"] = "unknown"
     original_page_access: Literal["snippet_only","inaccessible","text_inspected"]
     publication_time_note: str = Field(default="Publication time unknown; discovery time is separate",max_length=500)
+    original_posted_at: datetime | None = None
+    claimed_event_at: datetime | None = None
     limitations: str = Field(min_length=1,max_length=800)
     permitted_public: Literal[True]
     safety_reviewed: Literal[True]
     _url=field_validator("source_url")(public_url)
+    _aware=field_validator("original_posted_at", "claimed_event_at")(aware)
 
 
 class SearchBatch(StrictModel):
@@ -41,6 +45,8 @@ class SearchBatch(StrictModel):
     run_limitations: str = Field(min_length=1,max_length=1500)
     execution_context: Literal["interactive","unattended_test","scheduled"] = "interactive"
     execution_reference: str = Field(default="",max_length=200)
+    purpose: Literal["monitoring", "historical_backfill"] = "monitoring"
+    analyses: list[EventReview] = Field(default_factory=list, max_length=4)
 
     @field_validator("searched_at")
     @classmethod
@@ -53,6 +59,11 @@ class SearchBatch(StrictModel):
         ids=[q.id for q in self.queries]
         if len(set(ids))!=len(ids):raise ValueError("Query IDs must be distinct")
         if any(h.query_id not in ids for h in self.hits):raise ValueError("Unknown query reference")
+        urls={h.source_url for h in self.hits}
+        if any(not {e.source_url for e in review.evidence} <= urls for review in self.analyses):
+            raise ValueError("Search writer may assess only evidence submitted in this batch")
+        if any(review.as_of > self.searched_at for review in self.analyses):
+            raise ValueError("Review as-of cannot be later than research time")
         return self
 
 
@@ -63,6 +74,7 @@ def normalize_hit(batch: SearchBatch,hit: SearchHit) -> LeadIn:
           f"Original page access: {hit.original_page_access}. {hit.limitations}")
     return LeadIn(source_url=hit.source_url,source_platform="public_web_search",source_kind=hit.source_kind,
         observation=hit.observation,broad_region=hit.broad_region,
+        original_posted_at=hit.original_posted_at,claimed_event_at=hit.claimed_event_at,
         capture_time_note=hit.publication_time_note,
         observed_vs_inferred=("Original page text inspected; observation remains an attributed, unverified source report." if hit.original_page_access=="text_inspected" else
                              "Search result/snippet inspected only. Original page was not inspected; the result is a discovery lead, not verification."),
@@ -80,6 +92,7 @@ async def import_search_batch(batch,store,ingest,actor):
     details={"batch_id":batch.batch_id,"search_provider":batch.provider,"searched_at":batch.searched_at.isoformat(),
              "queries":[q.model_dump() for q in batch.queries],"results":[],"unattended":False,
              "caller_execution_context":batch.execution_context,"execution_reference":batch.execution_reference,
+             "purpose":batch.purpose,"analysis_receipts":[],
              "unattended_verification":"Not verified; caller context alone is not scheduler proof",
              "runner_note":"Caller-submitted research. Background search is not activated by this endpoint."}
     run=await store.insert("collection_runs",{"collector":"external_web_search","access_limitations":batch.run_limitations,"details":details})
@@ -92,10 +105,15 @@ async def import_search_batch(batch,store,ingest,actor):
                                       "source_url":hit.source_url,"source_title":hit.source_title,
                                       "retained_observation":hit.observation,"publication_time_note":hit.publication_time_note,
                                       "original_page_access":hit.original_page_access,"created":r["created"]})
+        resolved={r["source_url"]:r["lead_id"] for r in details["results"]}
+        snapshots={r["source_url"]:{k:r[k] for k in ("retained_observation","publication_time_note","original_page_access")} for r in details["results"]}
+        for review in batch.analyses:
+            receipt=await persist_review(review,store,actor,resolved,snapshots,run["id"])
+            details["analysis_receipts"].append({"review_id":review.review_id,**receipt})
     except Exception:
         status="partial" if details["results"] else "failed"
         error="Search intake incomplete; search tool credentials/content are not logged"
     finish={"finished_at":datetime.now(timezone.utc).isoformat(),"run_status":status,
             "observations_seen":len(batch.hits),"new_leads":new,"error_summary":error,"details":details}
     await store.patch("collection_runs",run["id"],finish)
-    return {"run_id":run["id"],"status":status,"new_leads":new,"results":details["results"],"background_search_enabled":False}
+    return {"run_id":run["id"],"status":status,"new_leads":new,"results":details["results"],"analysis_receipts":details["analysis_receipts"],"background_search_enabled":False}
