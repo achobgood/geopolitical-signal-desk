@@ -13,8 +13,10 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.collector import collect
-from app.models import AssessmentIn, DecisionIn, LeadIn, RelationIn
+from app.models import AssessmentIn, DecisionIn, LeadIn, RelationIn, ClusterIn, PipelineIn
 from app.store import StoreConflict, StoreUnavailable, get_store
+from app.pipeline import run_pipeline
+from app.providers import coverage
 
 app = FastAPI(title="Geopolitical Signal Desk", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 bearer = HTTPBearer(auto_error=False)
@@ -103,7 +105,7 @@ async def openapi():
 @app.get("/ready", dependencies=[Depends(authorize)])
 async def ready(store=Depends(get_store)):
     result = await store.rpc("signal_ready_v1", {})
-    if result.get("schema_version") != 1 or result.get("rls_tables") != 11 or result.get("end_user_policies") != 0:
+    if result.get("schema_version") != 1 or result.get("rls_tables") != 12 or result.get("end_user_policies") != 0:
         raise StoreUnavailable()
     return {"status": "ready", "schema_version": 1}
 
@@ -172,10 +174,34 @@ async def desk_snapshot(store=Depends(get_store)):
     result["leads_has_more"] = len(result["leads"]) > 200
     result["leads"] = result["leads"][:200]
     result["limits"] = {**tables, "leads": 200, "cluster_leads": 500}
-    result["coverage"] = [{"provider": "Federal Reserve press RSS", "collector": "federal_reserve_press",
-                           "implemented": True, "scope": "Up to 20 public economic headlines per invocation; no articles or media",
-                           "schedule_verified": False}]
+    result["coverage"] = coverage()
+    result["pipeline_runs"] = await store.rows("pipeline_runs",limit=20)
+    result["scope_note"] = "Working multi-source collection and triage, not validated geopolitical prediction. Fed RSS records are ingestion proof of concept. Automated topic queues are not event conclusions."
     return result
+
+
+@app.get("/v1/providers", dependencies=[Depends(authorize)])
+async def providers():
+    return coverage()
+
+
+@app.post("/v1/clusters")
+async def cluster(value: ClusterIn, actor=Depends(authorize), store=Depends(get_store)):
+    return await store.rpc("signal_cluster_v1", {"payload":value.model_dump(),"p_actor":actor})
+
+
+@app.post("/v1/pipeline/run")
+async def pipeline(value: PipelineIn, actor=Depends(authorize), store=Depends(get_store)):
+    return await run_pipeline(store,ingest,value.run_key,"manual:"+actor)
+
+
+@app.post("/v1/pipeline/scheduled")
+async def scheduled(value: PipelineIn, credentials: HTTPAuthorizationCredentials | None=Depends(bearer), store=Depends(get_store)):
+    expected=os.getenv("SIGNAL_DESK_SCHEDULER_KEY_SHA256","")
+    supplied=credentials.credentials if credentials and credentials.scheme.lower()=="bearer" else ""
+    if len(expected)!=64 or not secrets.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(),expected):
+        raise HTTPException(401,"Invalid scheduler credential")
+    return await run_pipeline(store,ingest,value.run_key,"supabase_cron")
 
 
 @app.post("/v1/collect/federal-reserve", dependencies=[Depends(authorize)])

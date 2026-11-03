@@ -21,7 +21,7 @@ class FakeStore:
     async def rpc(self, name, payload):
         self.calls.append((name, payload))
         if name == "signal_ready_v1":
-            return {"schema_version": 1, "rls_tables": 11, "end_user_policies": 0}
+            return {"schema_version": 1, "rls_tables": 12, "end_user_policies": 0}
         return {"created": True, "lead": {"id": 1, "status": "unverified"}}
 
     async def rows(self, table, **kwargs):
@@ -178,3 +178,13 @@ def test_snapshot_does_not_invent_scenarios(client):
     assert r.json()["clusters"] == []
     assert r.json()["activity_baselines"] == []
     assert r.json()["coverage"][0]["schedule_verified"] is False
+
+
+def test_scheduler_credential_has_no_general_api_access(client,monkeypatch):
+    import hashlib
+    token='test-scheduler-only-'*3
+    monkeypatch.setenv('SIGNAL_DESK_SCHEDULER_KEY_SHA256',hashlib.sha256(token.encode()).hexdigest())
+    headers={'Authorization':'Bearer '+token}
+    assert client.get('/v1/leads',headers=headers).status_code==401
+    assert client.post('/v1/leads',headers=headers,json=LEAD).status_code==401
+    assert client.post('/v1/pipeline/scheduled',headers={'Authorization':'Bearer wrong'},json={'run_key':'test:lease'}).status_code==401

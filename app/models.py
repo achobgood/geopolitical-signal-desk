@@ -31,6 +31,14 @@ class StrictModel(BaseModel):
 
 
 class Provenance(StrictModel):
+    record_kind: Literal["source_observation", "historical_summary"] = "source_observation"
+    origin_group: str = Field(default="unknown", max_length=200)
+    topic: str = Field(default="unspecified", max_length=100)
+    provider_item_id: str = Field(default="", max_length=150)
+    content_access: Literal["metadata_only", "text_inspected", "summary_only"] = "metadata_only"
+    safety_review_method: str = Field(default="caller_attestation", max_length=300)
+    external_references: list[str] = Field(default_factory=list, max_length=10)
+    engagement_counts: dict[str, int] = Field(default_factory=dict, max_length=3)
     account_type: Literal["official", "journalist", "organization", "eyewitness", "aggregator", "unknown"] = "unknown"
     language_code: str = Field(default="und", max_length=20)
     originality: Literal["original", "repost", "unknown"] = "unknown"
@@ -78,6 +86,10 @@ class LeadIn(StrictModel):
 
 
 class AssessmentIn(StrictModel):
+    assessment_origin: Literal["analyst", "automated_triage", "historical_summary"] = "analyst"
+    hypothesis_key: str = Field(default="", max_length=150)
+    source_limitations: str = Field(default="", max_length=3000)
+    strengthening_conditions: str = Field(default="", max_length=3000)
     lead_id: int = Field(gt=0)
     scenario: str = Field(min_length=1, max_length=2000)
     rationale: str = Field(min_length=1, max_length=8000)
@@ -112,3 +124,16 @@ class RelationIn(StrictModel):
         if self.lead_id == self.other_lead_id:
             raise ValueError("Relate two different leads")
         return self
+
+
+class ClusterIn(StrictModel):
+    canonical_key: str = Field(min_length=3, max_length=200)
+    title: str = Field(min_length=1, max_length=300)
+    broad_region: str = Field(max_length=100)
+    scenario: str = Field(min_length=1, max_length=3000)
+    competing_explanations: str = Field(min_length=1, max_length=3000)
+    lead_ids: list[int] = Field(min_length=1, max_length=100)
+
+
+class PipelineIn(StrictModel):
+    run_key: str = Field(min_length=3, max_length=100, pattern=r"^[a-zA-Z0-9:_-]+$")
