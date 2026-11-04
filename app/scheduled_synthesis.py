@@ -67,7 +67,7 @@ async def run_scheduled_synthesis(store, run_id):
             cluster_filter = {"cluster_id": f"eq.{cluster['id']}"}
             links, versions = await asyncio.gather(
                 store.request("GET", "cluster_leads", params={
-                    **cluster_filter, "select":"lead_id", "order":"lead_id.desc", "limit":str(MAX_EVIDENCE + 1),
+                    **cluster_filter, "select":"lead_id,rationale", "order":"lead_id.desc", "limit":str(MAX_EVIDENCE + 1),
                 }),
                 store.rows("assessments", limit=MAX_EVIDENCE + 1, filters=cluster_filter),
             )
@@ -89,6 +89,12 @@ async def run_scheduled_synthesis(store, run_id):
                 question for a in packet["prior_assessments"]
                 for question in (a["strengthening_conditions"], a["falsification_criteria"]) if question
             ))
+            analyst_links = {link["lead_id"] for link in links
+                             if (link.get("rationale") or "").startswith(("Research review linkage", "Explicit analyst linkage"))}
+            for observation in packet["observations"]:
+                observation["link_basis"] = ("analyst_reviewed" if observation["id"] in analyst_links
+                                             else "other")
+            packet["truncated"] = truncated
             previous_packet = baselines.get(cluster["id"])
             delta = compare_packet(packet, previous_packet, assessed, metadata)
             if truncated:

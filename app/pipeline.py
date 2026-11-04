@@ -9,6 +9,7 @@ from app.models import AssessmentIn, ClusterIn, RelationIn
 from app.providers import PROVIDERS
 from app.social_recovery import recover_social
 from app.scheduled_synthesis import run_scheduled_synthesis
+from app.claim_review import run_claim_review
 
 
 def now():return datetime.now(timezone.utc).isoformat()
@@ -82,6 +83,7 @@ async def run_pipeline(store,ingest,run_key,trigger):
             analysis = {"social_recovery": social}
             analysis.update(await correlate_and_triage(store))
             analysis["investigation_synthesis"] = await run_scheduled_synthesis(store, run["id"])
+            analysis["claim_review"] = await run_claim_review(store, analysis["investigation_synthesis"], run["id"])
             if social["write_failures"]:
                 status = "partial"
         if any(r["status"] in ("failed","partial") for r in results):status="partial"

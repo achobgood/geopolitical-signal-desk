@@ -23,6 +23,7 @@ def build_packet(detail, questions, captured_at):
         p = lead.get("provenance") or {}
         observations.append({
             "id": lead["id"], "url": lead["source_url"], "observation": lead["observation"],
+            "source_kind": lead.get("source_kind"), "safety_reviewed": p.get("safety_reviewed"),
             "claim_status": lead["status"], "published_at": lead.get("original_posted_at"),
             "event_at": lead.get("claimed_event_at"), "collected_at": lead["created_at"],
             "time_note": lead.get("capture_time_note"), "content_access": p.get("content_access"),
@@ -32,7 +33,7 @@ def build_packet(detail, questions, captured_at):
     return {
         "captured_at": captured_at, "cluster_id": cluster["id"],
         "event_key": cluster["canonical_key"].removeprefix("event-review:"),
-        "title": cluster["title"], "prior_summary": cluster["scenario"],
+        "title": cluster["title"], "broad_region": cluster["broad_region"], "prior_summary": cluster["scenario"],
         "open_questions": questions, "prior_assessments": list(latest.values()),
         "observations": observations, "retrieval_limits": detail.get("limitations"),
     }
