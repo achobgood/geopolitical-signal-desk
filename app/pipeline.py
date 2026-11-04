@@ -8,6 +8,7 @@ import httpx
 from app.models import AssessmentIn, ClusterIn, RelationIn
 from app.providers import PROVIDERS
 from app.social_recovery import recover_social
+from app.scheduled_synthesis import run_scheduled_synthesis
 
 
 def now():return datetime.now(timezone.utc).isoformat()
@@ -80,6 +81,7 @@ async def run_pipeline(store,ingest,run_key,trigger):
             social = await recover_social(store)
             analysis = {"social_recovery": social}
             analysis.update(await correlate_and_triage(store))
+            analysis["investigation_synthesis"] = await run_scheduled_synthesis(store, run["id"])
             if social["write_failures"]:
                 status = "partial"
         if any(r["status"] in ("failed","partial") for r in results):status="partial"
