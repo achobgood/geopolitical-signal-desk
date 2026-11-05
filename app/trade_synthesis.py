@@ -13,8 +13,13 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from app.market import aware
 from app.models import StrictModel, public_url
+
+
+def aware(value: datetime) -> datetime:
+    if value.utcoffset() is None:
+        raise ValueError("Timezone-aware market timestamp required")
+    return value
 
 D = Decimal
 ZERO = D("0")
@@ -40,6 +45,7 @@ class Position(StrictModel):
     shares: Decimal = Field(gt=0, le=100000000)
     category: Literal["ai", "diversified", "defensive", "other"]
     account_kind: Literal["taxable", "traditional_retirement", "roth_retirement"] = "taxable"
+    hard_exit_below: Decimal | None = Field(default=None, gt=0, le=1000000)
 
     @field_validator("shares")
     @classmethod
@@ -244,9 +250,38 @@ def synthesize(req: TradeSynthesisRequest, *, now: datetime | None = None) -> di
     holdings = {p.ticker: p for p in req.portfolio.positions}
     ai_value = sum((p.shares * quotes[p.ticker].last for p in req.portfolio.positions if p.category == "ai"), ZERO)
     tickets = []
-    if regime == "risk_off":
+    # A user-specified absolute exit level takes priority over macro regime labels.
+    # Never invent an exit threshold from the stock's recent price drop.
+    for p in sorted(req.portfolio.positions, key=lambda item: item.ticker):
+        if p.hard_exit_below is None:
+            continue
+        q = quotes[p.ticker]
+        if q.last > p.hard_exit_below:
+            continue
+        shares = floor_shares(p.shares)
+        if shares < 1:
+            continue
+        limit = cash(q.bid)
+        tickets.append({
+            "symbol": p.ticker, "action": "SELL", "shares": shares,
+            "limit_price": str(limit), "order_type": "SELL_LIMIT",
+            "trigger": f"Owner-defined hard exit reached: last sale <= {p.hard_exit_below}",
+            "expires_at": (now + timedelta(seconds=90)).isoformat(),
+            "estimated_notional": str(cash(limit * shares)),
+            "reason": "Owner-defined hard-exit price, not an inferred market-bottom call",
+            "stop_price": None, "target_price": None,
+            "tax_review": p.account_kind == "taxable",
+            "evidence_ids": req.evidence_ids,
+        })
+        if p.category == "ai":
+            ai_value -= q.last * p.shares
+        if len(tickets) >= policy.max_tickets:
+            break
+    if regime == "risk_off" and len(tickets) < policy.max_tickets:
         for p in sorted((x for x in req.portfolio.positions if x.category == "ai"),
                         key=lambda x: x.shares * quotes[x.ticker].last, reverse=True):
+            if any(t["symbol"] == p.ticker for t in tickets):
+                continue
             q = quotes[p.ticker]
             symbol_weight = (q.last * p.shares / nav) * D("100")
             ai_weight = ai_value / nav * D("100")
@@ -273,12 +308,12 @@ def synthesize(req: TradeSynthesisRequest, *, now: datetime | None = None) -> di
             if len(tickets) >= policy.max_tickets:
                 break
 
-    elif regime == "risk_on":
+    elif regime == "risk_on" and len(tickets) < policy.max_tickets:
         remaining_cash = req.portfolio.available_cash
         ranked = []
         for candidate in req.candidates:
             q = quotes.get(candidate.ticker)
-            if q is None or q.earnings_within_3_sessions:
+            if q is None or q.earnings_within_3_sessions or any(t["symbol"] == candidate.ticker for t in tickets):
                 continue
             if not (q.last > q.sma20 > q.sma50):
                 continue
