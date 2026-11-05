@@ -180,3 +180,74 @@ def test_actual_collector_path_runs_quant_and_cites_persisted_close_row(monkeypa
     assert len(cboe_results)==2
     assert all(x["quantitative_analysis"]["status"]=="completed" for x in cboe_results)
     assert all(x["quantitative_analysis"]["trade_approved"] is False for x in cboe_results)
+
+
+def test_as_of_public_snapshot_only_shows_truly_calculated_source_and_no_raw_history():
+    from app.market import snapshot
+    source = {
+        "id": 99, "source_url": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+        "source_title": "Official Cboe daily VIX close",
+        "publisher": "Cboe Global Markets",
+        "published_at": "2026-11-05T22:30:00Z",
+        "collected_at": "2026-11-05T22:31:00Z",
+        "event_at": "2026-11-05T00:00:00Z", "metric_code": "vix_daily_close",
+        "metric_value": "22.10", "metric_unit": "index points",
+        "family": "market_breadth", "phase": "confirmation",
+        "pressure": "ambiguous", "origin_group": "cboe:vix:2026-11-05",
+        "summary": "Official closing observation",
+        "claim_status": "primary_document", "caveats": "Not an equity price",
+    }
+    saved = {
+        "id": 200, "symbol":"VIX", "source_observation_id":99,
+        "instrument_kind":"volatility_index", "provider":"cboe_vix",
+        "observed_session":"2026-11-05",
+        "calculated_at":"2026-11-05T22:32:00Z",
+        "captured_at":"2026-11-05T22:31:30Z",
+        "method_version": METHOD,
+        "analysis":{"symbol":"VIX","rsi14":"62.10",
+                    "trade_ticket_approved":False, "input_bars":[{"fake":"must_not_leak"}]},
+        "input_bars":[{"source-only":"raw_ohlc_do_not_redistribute"}],
+    }
+    class St:
+        async def rows(self,table,**kw):
+            if table=="market_observations":return [source]
+            if table=="market_technical_snapshots":return [saved]
+            return []
+    before=asyncio.run(__import__("app.market",fromlist=["snapshot"]).snapshot(
+        St(),as_of=datetime(2026,11,5,22,31,tzinfo=timezone.utc),mode="live"))
+    assert before["technical_readouts"]==[]
+    live=asyncio.run(snapshot(St(),as_of=datetime(2026,11,5,22,33,tzinfo=timezone.utc),mode="live"))
+    assert len(live["technical_readouts"])==1
+    import json
+    rendered=json.dumps(live)
+    assert "raw_ohlc_do_not_redistribute" not in rendered
+    assert "must_not_leak" not in rendered
+    assert live["technical_readouts"][0]["not_a_trade_recommendation"] is True
+
+
+def test_technical_history_requires_authentication(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app, requests
+    from app.store import get_store
+    import hashlib
+    owner="quant-owner-key-"*3
+    reader="quant-reader-key-"*3
+    monkeypatch.setenv("SIGNAL_DESK_API_KEY",owner)
+    monkeypatch.setenv("SIGNAL_DESK_READ_KEY_SHA256",hashlib.sha256(reader.encode()).hexdigest())
+    requests.clear()
+    class St:
+        async def request(self,method,path,**kwargs):
+            assert path=="market_technical_snapshots"
+            assert "input_bars" not in kwargs["params"]["select"]
+            return [{"id":1,"symbol":"VIX","analysis":{"trend":"mixed"}}]
+    app.dependency_overrides[get_store]=St
+    try:
+        with TestClient(app) as c:
+            assert c.get("/v1/market/technical-snapshots").status_code==401
+            r=c.get("/v1/market/technical-snapshots",
+                    headers={"Authorization":"Bearer "+reader})
+            assert r.status_code==200
+            assert r.json()[0]["symbol"]=="VIX"
+            assert "input_bars" not in r.text
+    finally:
+        app.dependency_overrides.clear()
