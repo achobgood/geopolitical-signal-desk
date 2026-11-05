@@ -128,6 +128,17 @@ def test_hard_exit_sells_full_position_and_is_not_duplicated_by_trim():
     assert ticket["shares"] == 200 and ticket["tax_review"] is True
 
 
+def test_explicit_hard_exit_still_proposed_if_credit_data_missing():
+    body = request_dict(risk_on=False, exit_price="105")
+    body["indicators"] = {}
+    result = synthesize(TradeSynthesisRequest.model_validate(body), now=NOW)
+    assert result["status"] == "PROPOSAL_ONLY"
+    assert result["regime"] == "unavailable"
+    assert len(result["tickets"]) == 1
+    assert result["tickets"][0]["action"] == "SELL"
+    assert any("credit" in x.lower() for x in result["blocked_by"])
+
+
 def test_no_buys_on_election_news_alone():
     body = request_dict(risk_on=True)
     body["indicators"]["ai_credit_spread_change_5d_bp"] = None
