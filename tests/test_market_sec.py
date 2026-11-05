@@ -37,7 +37,7 @@ def test_resolve_ciks_from_official_index_only():
 
 
 def test_metadata_is_explicitly_not_content_or_ai_financing_conclusion():
-    collected = datetime(2026,11,5,23,45,tzinfo=timezone.utc)
+    collected = datetime(2026,11,5,19,0,tzinfo=timezone.utc)
     rows = filings_for_ticker("NVDA", 100, filing_fixture(), collected)
     assert len(rows) == 2
     assert rows[0].source_url.endswith("/100/000000010026000001/q.html")
@@ -52,7 +52,7 @@ def test_metadata_is_explicitly_not_content_or_ai_financing_conclusion():
 def test_invalid_documents_do_not_inject_urls():
     sample = filing_fixture()
     sample["filings"]["recent"]["primaryDocument"][0] = "https://evil.example/steal"
-    rows = filings_for_ticker("NVDA", 100, sample, datetime(2026,11,5,23,45,tzinfo=timezone.utc))
+    rows = filings_for_ticker("NVDA", 100, sample, datetime(2026,11,5,19,0,tzinfo=timezone.utc))
     assert len(rows) == 1
 
 
