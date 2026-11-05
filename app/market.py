@@ -19,6 +19,7 @@ from pydantic import Field, field_validator, model_validator
 from app.models import StrictModel, public_url, PipelineIn
 from app.trade_synthesis import TradeSynthesisRequest
 from app.trade_research import ResearchRequest
+from app.trade_orchestrator import AutoTradeRequest
 from app.store import get_store
 
 PUBLIC_REQUESTS = deque()
@@ -374,6 +375,28 @@ def register_market_routes(app, authorize, scheduler_bearer):
             return await propose_research(store, entry)
         except (ValueError, httpx.HTTPError):
             raise HTTPException(502, "Market research model did not produce a valid sourced shortlist")
+
+    @app.post("/v1/market/trade-synthesis/auto")
+    async def trade_synthesis_auto(
+        entry: AutoTradeRequest,
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only the owner may submit private account data for synthesis")
+        import httpx
+        from app.trade_orchestrator import run_auto_synthesis
+        ids = ",".join(str(i) for i in entry.trade.evidence_ids)
+        evidence = await store.request(
+            "GET", "market_observations",
+            params={"select": "id,published_at", "id": f"in.({ids})", "limit": "20"}
+        )
+        if len(evidence) != len(entry.trade.evidence_ids):
+            raise HTTPException(409, "Auto-synthesis requires existing research references")
+        try:
+            return await run_auto_synthesis(store, entry)
+        except (ValueError, httpx.HTTPError):
+            raise HTTPException(502, "Sourced trade research did not complete")
 
     @app.post("/v1/market/trade-synthesis")
     async def trade_synthesis(
