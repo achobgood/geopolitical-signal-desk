@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.main import app, requests
-from app.market import MarketAssessment, MarketObservation, eligible, radar, snapshot
+from app.market import MarketAssessment, MarketObservation, PUBLIC_REQUESTS, eligible, radar, snapshot
 from app.store import get_store
 
 AUTH = {"Authorization": "Bearer " + "test-market-key-" * 3}
@@ -67,6 +67,7 @@ def client(monkeypatch):
     monkeypatch.delenv("SIGNAL_DESK_SEARCH_WRITER_KEY_SHA256", raising=False)
     monkeypatch.delenv("SIGNAL_DESK_READ_KEY_SHA256", raising=False)
     requests.clear()
+    PUBLIC_REQUESTS.clear()
     fake = FakeMarketStore([EARLY])
     app.dependency_overrides[get_store] = lambda: fake
     with TestClient(app) as c:
@@ -191,3 +192,9 @@ def test_no_market_claims_when_data_missing():
     r = radar([], as_of=datetime.now(timezone.utc), mode="live")
     assert r["posture"] == "INSUFFICIENT OBSERVATIONS"
     assert not r["risk_families"]
+
+
+def test_public_endpoint_bounded_for_free_service(client):
+    for _ in range(60):
+        assert client.get("/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z").status_code == 200
+    assert client.get("/v1/market/public-snapshot").status_code == 429
