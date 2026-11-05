@@ -123,13 +123,16 @@ function show(d){
  if(!d.latest_metrics.length)add($("measurements"),"div","empty","No verified market price or spread series connected.");
  d.latest_metrics.forEach(function(m){
   var line=add($("measurements"),"div","measure"),left=add(line,"div");
-  add(left,"div","",m.code.replaceAll("_"," "));add(left,"div","detail",date(m.published_at)+" · "+m.publisher);
+  add(left,"div","",m.code.replaceAll("_"," "));add(left,"div","detail","Session "+date(m.event_at||m.published_at)+" · first recorded "+date(m.published_at)+" · "+m.publisher);
   add(line,"b","",m.value+" "+(m.unit||""))
  });
  empty("health");[
   ["Live prices",d.coverage.price_feed],["Credit spreads",d.coverage.credit_spread_feed],
   ["SEC filings",d.coverage.earnings_filings_feed],["Research intake",d.coverage.research_intake],
-  ["Automated alerts",d.coverage.automatic_alert_delivery],["Calibrated prediction",d.coverage.calibrated_forecast?"Validated":"Not validated"]
+  ["Automated alerts",d.coverage.automatic_alert_delivery],["Calibrated prediction",d.coverage.calibrated_forecast?"Validated":"Not validated"],
+  ["Treasury daily yields",(d.feed_health.us_treasury||{}).status||"Not collected"],
+  ["Cboe VIX historical",(d.feed_health.cboe_vix||{}).status||"Not collected"],
+  ["Cboe VXN historical",(d.feed_health.cboe_vxn||{}).status||"Not collected"]
  ].forEach(function(k){add($("health"),"span","",k[0]);add($("health"),"b","",String(k[1]).replaceAll("_"," "))});
  $("status").textContent=(mode==="replay"?"RETROSPECTIVE / NOT A HISTORICAL ALERT":"LIVE / ONLY ACTUALLY COLLECTED EVIDENCE")+" · AS OF "+new Date(d.as_of).toISOString().slice(0,16).replace("T"," ")+" UTC · "+r.observations_from_future_excluded+" observations excluded"
 }

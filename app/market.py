@@ -12,10 +12,11 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from pydantic import Field, field_validator, model_validator
 
-from app.models import StrictModel, public_url
+from app.models import StrictModel, public_url, PipelineIn
 from app.store import get_store
 
 PUBLIC_REQUESTS = deque()
@@ -174,6 +175,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     """Bounded query, and no per-user portfolio fields or private geop records."""
     observations = await store.rows("market_observations", limit=250)
     assessments = await store.rows("market_assessments", limit=100)
+    feed_runs = await store.rows("market_feed_runs", limit=12)
     valid = [o for o in observations if eligible(o, as_of, mode)]
     latest_by_metric = {}
     for o in valid:
@@ -193,11 +195,24 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
         key = a["scenario"]
         if key not in latest_scenarios:
             latest_scenarios[key] = a
+    # Feed health is factual: a completed run and dated session, not an assertion of live quote coverage.
+    feed_health = {}
+    for run in feed_runs:
+        for p in run.get("provider_results") or []:
+            name = p.get("provider")
+            if name in ("us_treasury", "cboe_vix", "cboe_vxn") and name not in feed_health:
+                feed_health[name] = {
+                    "status": p.get("status", "unknown"),
+                    "latest_session": p.get("latest_session"),
+                    "checked_at": run.get("finished_at"),
+                    "run_status": run.get("status"),
+                }
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
         "radar": radar(observations, as_of=as_of, mode=mode),
         "observations": valid[:150],
         "latest_metrics": list(latest_by_metric.values())[:40],
+        "feed_health": feed_health,
         "scenarios": latest_scenarios,
         "coverage": {
             "price_feed": "not_connected",
@@ -212,7 +227,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     }
 
 
-def register_market_routes(app, authorize):
+def register_market_routes(app, authorize, scheduler_bearer):
     """Mount independent market API and its read-only, public-source dashboard."""
     from app.main import fingerprint
     from pathlib import Path
@@ -282,6 +297,44 @@ def register_market_routes(app, authorize):
         return await store.rpc("market_record_observation_v1", {
             "payload": payload, "p_key": key, "p_actor": actor
         })
+
+
+    @app.get("/v1/market/feeds/runs", dependencies=[Depends(authorize)])
+    async def market_feed_runs(
+        limit: int = Query(30, ge=1, le=100),
+        before: int | None = Query(None, gt=0),
+        store=Depends(get_store),
+    ):
+        return await store.rows("market_feed_runs", limit=limit, before=before)
+
+    @app.post("/v1/market/feeds/run")
+    async def market_feed_manual(
+        value: PipelineIn,
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        from app.market_feeds import run_market_feed
+        return await run_market_feed(store, value.run_key, "manual")
+
+    @app.post("/v1/market/feeds/scheduled")
+    async def market_feed_scheduled(
+        value: PipelineIn,
+        credentials: HTTPAuthorizationCredentials | None = Depends(scheduler_bearer),
+        store=Depends(get_store),
+    ):
+        # Reuse the existing, dedicated scheduler-only Vault secret.
+        # It does NOT authorize general API or research writes.
+        import hashlib
+        import os
+        import secrets
+        from app.market_feeds import run_market_feed
+        expected = os.getenv("SIGNAL_DESK_SCHEDULER_KEY_SHA256", "")
+        supplied = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else ""
+        if len(expected) != 64 or not secrets.compare_digest(
+            hashlib.sha256(supplied.encode()).hexdigest(), expected
+        ):
+            raise HTTPException(401, "Invalid scheduler credential")
+        return await run_market_feed(store, value.run_key, "supabase_cron")
 
     @app.post("/v1/market/assessments")
     async def record_market_assessment(
