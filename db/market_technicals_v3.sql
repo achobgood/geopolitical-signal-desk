@@ -45,7 +45,8 @@ declare
 begin
  if length(coalesce(p_key,''))<>64
     or v_provider not in ('cboe_vix','cboe_vxn')
-    or v_symbol <> case when v_provider='cboe_vix' then 'VIX' else 'VXN' end
+    or (v_provider='cboe_vix' and v_symbol <> 'VIX')
+    or (v_provider='cboe_vxn' and v_symbol <> 'VXN')
     or payload->>'instrument_kind' <> 'volatility_index'
     or payload->>'method_version' <> 'cross-timeframe-pivots-wilder-v1'
     or v_captured is null or v_session is null
