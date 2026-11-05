@@ -107,3 +107,22 @@ These do NOT provide live stock/ETF prices, issuer-specific AI CDS or bonds,
 full SEC earnings parsing, financing counterparty analysis, calibrated forecasts,
 or automatic trading or alerts. Those require separate licensed/verified data
 and validation. Never claim this is a fully automated AI credit-risk engine.
+
+## November 5 source-correction receipt
+
+Four historical AP records were originally stored with an inaccessible longer AP link.
+Their original source URLs have NOT been overwritten. An append-only correction
+record now points to the inspected canonical AP page:
+https://apnews.com/article/7ee9c212805aa5e70cf34d25aab7a36e
+The correction is available only after its actual review timestamp. A historical
+source record is not proof that Signal Desk independently discovered the story early.
+
+## Version 2 additional evidence and private trade controls
+
+See [release V2 acceptance gates](market-release-v2.md). SEC filing metadata is
+available only after a genuine SEC_USER_AGENT is configured; it does not interpret
+financial statements or infer debt stress. Optional consolidated SIP quotes require
+an actual market-data entitlement; IEX alone is explicitly non-consolidated.
+All exact owner trade recommendations, including abstentions, now require an
+append-only private database audit receipt. The original geopolitical watch is
+not modified. No broker orders are executed.
