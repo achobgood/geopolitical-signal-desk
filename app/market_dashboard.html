@@ -61,6 +61,17 @@ footer{margin-top:27px;border-top:1px solid var(--edge);padding-top:18px;color:v
 <div class="stat"><div class="caption">Eligible observations</div><div class="big" id="observations">—</div><div class="detail">At selected as-of cutoff</div></div>
 <div class="stat"><div class="caption">Live market feeds</div><div class="big danger" id="coverage">NOT CONNECTED</div><div class="detail">Prices, CDS, breadth, earnings</div></div>
 </div>
+<section class="panel section" aria-label="Trade synthesis status">
+<div class="panel-heading"><h2>Trade Decision Engine</h2><small id="trade-status" style="color:var(--amber)">NO TRADE · DATA REQUIRED</small></div>
+<p style="max-width:none;margin:0 0 13px">Exact buy, sell, and trim plans are calculated only with a fresh private portfolio, licensed live stock quotes, dated AI credit and breadth indicators, and portfolio risk controls. The engine will not infer prices or position sizes from news headlines alone.</p>
+<div class="health" style="max-width:750px">
+<span>Price and liquidity feed</span><b id="trade-quote-status">Not connected</b>
+<span>AI credit and market-breadth feeds</span><b id="trade-credit-status">Not connected</b>
+<span>Orders</span><b>Manual approval only · broker execution disabled</b>
+<span>Portfolio privacy</span><b>Owner-only processing · not stored in market database</b>
+</div>
+<div class="callout">If a protective sell level you set is reached, the engine can still produce a reviewable SELL ticket using a fresh quote. Discretionary trades require complete market-regime evidence. This public view never exposes positions or account details.</div>
+</section>
 <div class="grid">
 <section class="panel"><div class="panel-heading"><h2>Risk pressure radar</h2><small>EVIDENCE FAMILIES</small></div><div id="family-list"></div><div class="callout" id="limitations">This system does not infer probabilities from article counts.</div></section>
 <section class="panel"><div class="panel-heading"><h2>Scenario desk</h2><small>CONDITIONAL THESIS</small></div><div id="scenarios"></div><div class="callout">A usable outlook needs invalidation triggers and counterevidence. Headline sentiment alone is not a bottom signal.</div></section>
@@ -87,6 +98,8 @@ function show(d){
  $("families").textContent=r.risk_families.length;$("observations").textContent=r.eligible_observations;
  $("limitations").textContent=r.limitations+" "+r.method+". No statistical downside probability is provided.";
  $("coverage").textContent=d.coverage.price_feed==="not_connected"?"NOT CONNECTED":"CHECK SOURCE";
+ $("trade-quote-status").textContent=d.coverage.price_feed==="not_connected"?"Not connected":"Inspect source";
+ $("trade-credit-status").textContent=d.coverage.credit_spread_feed==="not_connected"?"Not connected":"Inspect source";
  $("timeline-title").textContent=mode==="replay"?"PUBLICLY KNOWABLE THEN":"ACTUALLY COLLECTED BY THEN";
  empty("family-list");
  if(!r.risk_families.length)add($("family-list"),"div","empty","No eligible risk signals. This may indicate missing collection, not low risk.");

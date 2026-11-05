@@ -17,6 +17,9 @@ from fastapi.responses import FileResponse
 from pydantic import Field, field_validator, model_validator
 
 from app.models import StrictModel, public_url, PipelineIn
+from app.trade_synthesis import TradeSynthesisRequest
+from app.trade_research import ResearchRequest
+from app.trade_orchestrator import AutoTradeRequest
 from app.store import get_store
 
 PUBLIC_REQUESTS = deque()
@@ -335,6 +338,83 @@ def register_market_routes(app, authorize, scheduler_bearer):
         ):
             raise HTTPException(401, "Invalid scheduler credential")
         return await run_market_feed(store, value.run_key, "supabase_cron")
+
+
+    @app.get("/v1/market/trade-synthesis/status", dependencies=[Depends(authorize)])
+    async def trade_synthesis_status():
+        """Market-wide readiness; this endpoint never returns positions or account data."""
+        return {
+            "mode": "research_proposals_only",
+            "live_stock_quote_provider": "not_connected",
+            "ai_issuer_credit_spread_provider": "not_connected",
+            "breadth_provider": "not_connected",
+            "private_portfolio_sync": "not_connected",
+            "broker_order_execution": "disabled",
+            "requirements": [
+                "An owner-provided, fresh account-level NAV, cash and positions snapshot",
+                "Current regular-session stock or ETF quotes, SMA20/SMA50/ATR14 and liquidity",
+                "Dated AI credit, market breadth and Nasdaq volatility indicators from distinct origins",
+                "At least one real stored market observation to cite",
+                "Manual owner review of any generated ticket before any brokerage action",
+            ],
+            "no_trade_default": True,
+            "note": "No execution, no storage of positions, no implied vendor verification; recommendations are conditional.",
+        }
+
+    @app.post("/v1/market/trade-synthesis/research")
+    async def trade_research(
+        entry: ResearchRequest,
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only the owner may request model research")
+        from app.trade_research import propose_research
+        import httpx
+        try:
+            return await propose_research(store, entry)
+        except (ValueError, httpx.HTTPError):
+            raise HTTPException(502, "Market research model did not produce a valid sourced shortlist")
+
+    @app.post("/v1/market/trade-synthesis/auto")
+    async def trade_synthesis_auto(
+        entry: AutoTradeRequest,
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only the owner may submit private account data for synthesis")
+        import httpx
+        from app.trade_orchestrator import run_auto_synthesis
+        ids = ",".join(str(i) for i in entry.trade.evidence_ids)
+        evidence = await store.request(
+            "GET", "market_observations",
+            params={"select": "id,published_at", "id": f"in.({ids})", "limit": "20"}
+        )
+        if len(evidence) != len(entry.trade.evidence_ids):
+            raise HTTPException(409, "Auto-synthesis requires existing research references")
+        try:
+            return await run_auto_synthesis(store, entry)
+        except (ValueError, httpx.HTTPError):
+            raise HTTPException(502, "Sourced trade research did not complete")
+
+    @app.post("/v1/market/trade-synthesis")
+    async def trade_synthesis(
+        entry: TradeSynthesisRequest,
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only the owner may submit account data for synthesis")
+        from app.trade_synthesis import synthesize
+        ids = ",".join(str(i) for i in entry.evidence_ids)
+        evidence = await store.request(
+            "GET", "market_observations",
+            params={"select": "id,published_at", "id": f"in.({ids})", "limit": "20"},
+        )
+        if len(evidence) != len(entry.evidence_ids):
+            raise HTTPException(409, "Trade synthesis requires existing cited market observations")
+        return synthesize(entry)
 
     @app.post("/v1/market/assessments")
     async def record_market_assessment(
