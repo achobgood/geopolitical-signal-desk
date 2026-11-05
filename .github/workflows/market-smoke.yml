@@ -1,0 +1,39 @@
+name: Live Market Desk Smoke Test
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-api-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify live public market page and source-backed API
+        env:
+          BASE_URL: https://geopolitical-signal-desk.onrender.com
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/health" -o /tmp/health.json
+          curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/market" -o /tmp/market.html
+          curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z" -o /tmp/replay.json
+          curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=live" -o /tmp/live.json
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          health = json.loads(Path('/tmp/health.json').read_text())
+          assert health.get("status") == "ok"
+          assert "Market Intelligence" in Path('/tmp/market.html').read_text()
+          replay = json.loads(Path('/tmp/replay.json').read_text())
+          live = json.loads(Path('/tmp/live.json').read_text())
+          assert replay.get("desk") == live.get("desk") == "market"
+          assert replay.get("mode") == "replay" and live.get("mode") == "live"
+          assert replay["radar"]["actual_earlier_alert"] is False
+          assert len(replay["observations"]) >= 5
+          assert len(live["observations"]) >= 5
+          assert replay["coverage"]["price_feed"] == "not_connected"
+          assert "scenarios" in live and "latest_metrics" in live
+          assert not ("supabase_key" in live or "geopolitical_leads" in live)
+          print("MARKET_DESK_SMOKE_OK",len(replay["observations"]),len(live["observations"]))
+          PY
