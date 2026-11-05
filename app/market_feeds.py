@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 import httpx
 from defusedxml import ElementTree
 
-from app.market import MarketObservation
+from app.market import MarketObservation, expected_completed_market_session
 
 TREASURY_URL_TEMPLATE = (
     "https://home.treasury.gov/resource-center/data-chart-center/"
@@ -250,8 +250,15 @@ async def run_market_feed(store, run_key: str, trigger: str) -> dict:
                         })
                         count += 1
                         added += int(result.get("created", False))
-                    results.append({"provider": provider, "status": "completed", "readings": count,
-                                    "new_records": added, "latest_session": readings[-1].session.isoformat()})
+                    session = max(r.session for r in readings)
+                    stale = session < expected_completed_market_session(datetime.now(timezone.utc))
+                    source_status = "stale" if stale else "completed"
+                    results.append({"provider": provider, "status": source_status,
+                                    "readings": count, "new_records": added,
+                                    "latest_session": session.isoformat(),
+                                    "validation": "expected_latest_completed_us_session_weekday_only"})
+                    if stale:
+                        status = "partial"
                 except Exception as exc:
                     # Do not leak third-party body or tokens; preserve source-level failure.
                     error = "http_or_timeout" if isinstance(exc, (httpx.HTTPError, asyncio.TimeoutError)) else "invalid_or_unavailable_feed"
