@@ -11,7 +11,7 @@ from app.trade_research import (
     propose_research,
 )
 
-DATE = datetime(2026, 11, 5, 23, 5, tzinfo=timezone.utc)
+DATE = datetime(2026, 11, 5, 22, 30, tzinfo=timezone.utc)
 
 
 def request():
@@ -123,7 +123,7 @@ def test_public_callers_cannot_invoke_paid_model_or_access_private_data(monkeypa
     requests.clear()
     db = FakeDB()
     app.dependency_overrides[get_store] = lambda: db
-    body = {"as_of":"2026-11-05T23:05:00Z",
+    body = {"as_of":"2026-11-05T22:30:00Z",
             "focus":"ai_infrastructure","universe":["CRWV","NVDA"],"max_ideas":2}
     try:
         with TestClient(app) as client:
