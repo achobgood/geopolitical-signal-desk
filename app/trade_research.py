@@ -161,7 +161,13 @@ async def propose_research(store, request: ResearchRequest) -> dict:
     if not key:
         return {"status": "DISABLED", "reason": "Server-side model credential not configured", "not_orderable": True}
     observations = await store.rows("market_observations", limit=70)
-    packet = public_research_packet(observations, request)
+    reviews = await store.rows("market_source_amendments", limit=200)
+    retracted = {x["observation_id"] for x in reviews
+                 if x.get("amendment_kind") == "retraction"
+                 and datetime.fromisoformat(x["reviewed_at"].replace("Z", "+00:00")) <= request.as_of}
+    packet = public_research_packet(
+        [x for x in observations if x.get("id") not in retracted], request
+    )
     if not packet["observations"]:
         return {"status": "NO_RESEARCH", "reason": "No eligible publicly observed market evidence",
                 "not_orderable": True}
