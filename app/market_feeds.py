@@ -273,7 +273,7 @@ async def run_market_feed(store, run_key: str, trigger: str) -> dict:
     except Exception:
         results.append({"provider": "collector", "status": "failed", "reason": "total_run_bound"})
         status = "partial"
-    if not any(x["status"] == "completed" for x in results):
+    if not any(x["status"] in ("completed", "stale") for x in results):
         status = "failed"
     receipt = {"status": status, "finished_at": datetime.now(timezone.utc).isoformat(),
                "provider_results": results, "error_summary": "" if status == "completed" else "One or more public feeds unavailable"}
