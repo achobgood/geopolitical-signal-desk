@@ -213,6 +213,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     feed_runs = await store.rows("market_feed_runs", limit=12)
     amendments = await store.rows("market_source_amendments", limit=100)
     watch_records = await store.rows("market_watch_signals", limit=80)
+    technical_records = await store.rows("market_technical_snapshots", limit=20)
     # Apply only corrections/retractions actually recorded by the historical cutoff.
     # Original records remain immutable in the database for forensic inspection.
     corrections = {}
@@ -306,6 +307,36 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
             })
         except (ValueError, TypeError, KeyError):
             continue
+    # A calculation's creation time is its actual first availability; no lookahead
+    # in historical replay. The persisted raw bars never leave the server.
+    technical_readouts = []
+    for record in technical_records:
+        try:
+            if (parse_time(record["calculated_at"]) > as_of
+                    or parse_time(record["captured_at"]) > as_of):
+                continue
+            source = visible_source_ids.get(record["source_observation_id"])
+            if not source:
+                continue
+            overview = dict(record["analysis"])
+            overview.pop("input_bars", None)
+            technical_readouts.append({
+                "id": record["id"], "symbol": record["symbol"],
+                "instrument_kind": "volatility_index",
+                "method_version": record["method_version"],
+                "source_url": source["source_url"],
+                "source_observation_id": source["id"],
+                "source_first_collected_at": source["collected_at"],
+                "calculated_at": record["calculated_at"],
+                "last_completed_session": record["observed_session"],
+                "analysis": overview,
+                "not_a_trade_recommendation": True,
+            })
+        except (KeyError, ValueError, TypeError):
+            continue
+    unique_technical = {}
+    for item in technical_readouts:
+        unique_technical.setdefault(item["symbol"],item)
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
         "radar": radar(effective, as_of=as_of, mode=mode),
@@ -314,6 +345,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
         "feed_health": feed_health,
         "scenarios": latest_scenarios,
         "watch_signals": visible_watches[:30],
+        "technical_readouts": list(unique_technical.values()),
         "coverage": {
             "price_feed": "not_connected",
             "credit_spread_feed": "not_connected",
@@ -395,6 +427,17 @@ def register_market_routes(app, authorize, scheduler_bearer):
         store=Depends(get_store),
     ):
         return await store.rows("market_observations", limit=limit, before=before)
+
+    @app.get("/v1/market/technical-snapshots", dependencies=[Depends(authorize)])
+    async def technical_history(
+        limit: int = Query(25, ge=1, le=50),
+        store=Depends(get_store),
+    ):
+        # Do not return the large raw input_bars or any personal account information.
+        return await store.request("GET", "market_technical_snapshots", params={
+            "select": "id,symbol,instrument_kind,observed_session,source_url,source_observation_id,calculated_at,method_version,bar_count,bars_sha256,analysis",
+            "order": "id.desc", "limit": str(limit),
+        })
 
     @app.get("/v1/market/watch-signals", dependencies=[Depends(authorize)])
     async def market_watch_signals(
