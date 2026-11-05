@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 import time
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Literal
 
@@ -91,6 +92,26 @@ class MarketObservation(StrictModel):
         return self
 
 
+class MarketAmendment(StrictModel):
+    observation_id: int = Field(gt=0)
+    amendment_kind: Literal["canonical_link", "unavailable", "attribution", "retraction"]
+    corrected_source_url: str | None = None
+    rationale: str = Field(min_length=25, max_length=1500)
+
+    @field_validator("corrected_source_url")
+    @classmethod
+    def validated_link(cls, value):
+        return public_url(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_change(self):
+        if self.amendment_kind == "canonical_link" and not self.corrected_source_url:
+            raise ValueError("A canonical link amendment requires an inspected URL")
+        if self.amendment_kind in ("unavailable", "retraction") and self.corrected_source_url:
+            raise ValueError("Retraction/unavailable records do not pretend to have a new source link")
+        return self
+
+
 class MarketAssessment(StrictModel):
     as_of: datetime
     mode: Literal["live", "replay"]
@@ -117,6 +138,17 @@ class MarketAssessment(StrictModel):
 
 def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def expected_completed_market_session(as_of: datetime):
+    """Conservative weekday-only US close check; holidays may be falsely stale."""
+    ny = as_of.astimezone(ZoneInfo("America/New_York"))
+    day = ny.date()
+    if ny.weekday() < 5 and (ny.hour, ny.minute) < (16, 15):
+        day -= timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day
 
 
 def eligible(row: dict, cutoff: datetime, mode: str) -> bool:
@@ -179,7 +211,28 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     observations = await store.rows("market_observations", limit=250)
     assessments = await store.rows("market_assessments", limit=100)
     feed_runs = await store.rows("market_feed_runs", limit=12)
-    valid = [o for o in observations if eligible(o, as_of, mode)]
+    amendments = await store.rows("market_source_amendments", limit=100)
+    # Apply only corrections/retractions actually recorded by the historical cutoff.
+    # Original records remain immutable in the database for forensic inspection.
+    corrections = {}
+    for amendment in amendments:
+        if parse_time(amendment["reviewed_at"]) <= as_of:
+            corrections.setdefault(amendment["observation_id"], amendment)
+    effective = []
+    for source in observations:
+        entry = dict(source)
+        amendment = corrections.get(source["id"])
+        if amendment:
+            entry["source_review"] = amendment["amendment_kind"]
+            entry["source_reviewed_at"] = amendment["reviewed_at"]
+            entry["source_review_note"] = amendment["rationale"]
+            if amendment["amendment_kind"] == "canonical_link":
+                entry["original_source_url"] = source["source_url"]
+                entry["source_url"] = amendment["corrected_source_url"]
+            if amendment["amendment_kind"] == "retraction":
+                continue
+        effective.append(entry)
+    valid = [o for o in effective if eligible(o, as_of, mode)]
     latest_by_metric = {}
     for o in valid:
         code = o.get("metric_code")
@@ -192,6 +245,11 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     recent_assessments = [
         a for a in assessments
         if a.get("mode") == mode and parse_time(a["as_of"]) <= as_of
+        # Backfilled "live" assessments must not appear in earlier live histories.
+        and (mode == "replay" or (
+            a.get("created_at") is not None
+            and parse_time(a["created_at"]) <= as_of
+        ))
     ]
     latest_scenarios = {}
     for a in recent_assessments:
@@ -201,18 +259,26 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     # Feed health is factual: a completed run and dated session, not an assertion of live quote coverage.
     feed_health = {}
     for run in feed_runs:
+        # Replay is a historical research view, not a picture of later collection health.
+        if mode == "replay" or not run.get("finished_at") or parse_time(run["finished_at"]) > as_of:
+            continue
         for p in run.get("provider_results") or []:
             name = p.get("provider")
-            if name in ("us_treasury", "cboe_vix", "cboe_vxn") and name not in feed_health:
+            if name in ("us_treasury", "cboe_vix", "cboe_vxn", "sec_edgar") and name not in feed_health:
                 feed_health[name] = {
                     "status": p.get("status", "unknown"),
                     "latest_session": p.get("latest_session"),
                     "checked_at": run.get("finished_at"),
                     "run_status": run.get("status"),
+                    "freshness": ("not_applicable" if name == "sec_edgar" else "stale_or_unknown" if not p.get("latest_session")
+                        or datetime.fromisoformat(p["latest_session"]).date() <
+                            expected_completed_market_session(as_of)
+                        else "current_completed_session"),
+                    "feed_type": "filing_metadata_index" if name == "sec_edgar" else "historical_daily_reference_not_live_quote",
                 }
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
-        "radar": radar(observations, as_of=as_of, mode=mode),
+        "radar": radar(effective, as_of=as_of, mode=mode),
         "observations": valid[:150],
         "latest_metrics": list(latest_by_metric.values())[:40],
         "feed_health": feed_health,
@@ -268,6 +334,28 @@ def register_market_routes(app, authorize, scheduler_bearer):
         if cutoff.utcoffset() is None or cutoff > datetime.now(timezone.utc) + timedelta(minutes=5):
             raise HTTPException(422, "Supply a nonfuture timezone-aware as_of")
         return await snapshot(store, as_of=cutoff, mode=mode)
+
+    @app.get("/v1/market/amendments", dependencies=[Depends(authorize)])
+    async def market_amendments(
+        limit: int = Query(50, ge=1, le=100),
+        before: int | None = Query(None, gt=0),
+        store=Depends(get_store),
+    ):
+        return await store.rows("market_source_amendments", limit=limit, before=before)
+
+    @app.post("/v1/market/amendments")
+    async def record_market_amendment(
+        entry: MarketAmendment,
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only owner can correct source references")
+        source = await store.rows("market_observations",limit=1,filters={"id":f"eq.{entry.observation_id}"})
+        if not source:
+            raise HTTPException(404,"Unknown market observation")
+        body = {**entry.model_dump(mode="json"), "reviewed_by": "owner_research"}
+        return await store.insert("market_source_amendments", body)
 
     @app.get("/v1/market/observations", dependencies=[Depends(authorize)])
     async def market_observations(
@@ -340,12 +428,39 @@ def register_market_routes(app, authorize, scheduler_bearer):
         return await run_market_feed(store, value.run_key, "supabase_cron")
 
 
+    @app.get("/v1/market/data-sources/status", dependencies=[Depends(authorize)])
+    async def market_data_source_status():
+        from app.market_quotes import configuration
+        from app.market_sec import configured_user_agent
+        return {
+            "stock_data": configuration(),
+            "sec_edgar": {
+                "configured": configured_user_agent() is not None,
+                "scope": "official_filing_metadata_only",
+                "contact_value_exposed": False,
+            },
+            "ai_issuer_cds": "not_connected",
+            "broad_market_breadth": "not_connected",
+            "earnings_calendar": "not_connected",
+            "automatic_broker_orders": "disabled",
+        }
+
+    @app.get("/v1/market/vendor-quote/{ticker}", dependencies=[Depends(authorize)])
+    async def market_vendor_quote(ticker: str, actor=Depends(authorize)):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only owner can query licensed vendor data")
+        from app.market_quotes import vendor_snapshot
+        try:
+            return await vendor_snapshot(ticker)
+        except ValueError:
+            raise HTTPException(422, "Invalid ticker")
+
     @app.get("/v1/market/trade-synthesis/status", dependencies=[Depends(authorize)])
     async def trade_synthesis_status():
         """Market-wide readiness; this endpoint never returns positions or account data."""
         return {
             "mode": "research_proposals_only",
-            "live_stock_quote_provider": "not_connected",
+            "live_stock_quote_provider": __import__("app.market_quotes", fromlist=["configuration"]).configuration(),
             "ai_issuer_credit_spread_provider": "not_connected",
             "breadth_provider": "not_connected",
             "private_portfolio_sync": "not_connected",
@@ -360,6 +475,16 @@ def register_market_routes(app, authorize, scheduler_bearer):
             "no_trade_default": True,
             "note": "No execution, no storage of positions, no implied vendor verification; recommendations are conditional.",
         }
+
+    @app.get("/v1/market/trade-synthesis/history")
+    async def private_trade_history(
+        limit: int = Query(20, ge=1, le=100),
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Private trade decisions require the owner credential")
+        return await store.rpc("market_decision_history_v1", {"p_limit": limit})
 
     @app.post("/v1/market/trade-synthesis/research")
     async def trade_research(
@@ -394,7 +519,10 @@ def register_market_routes(app, authorize, scheduler_bearer):
         if len(evidence) != len(entry.trade.evidence_ids):
             raise HTTPException(409, "Auto-synthesis requires existing research references")
         try:
-            return await run_auto_synthesis(store, entry)
+            result = await run_auto_synthesis(store, entry)
+            from app.trade_audit import persist_trade_result
+            method = "ai_researched" if result.get("research", {}).get("status") == "RESEARCH_ONLY" else "rule_based"
+            return await persist_trade_result(store, result, method=method)
         except (ValueError, httpx.HTTPError):
             raise HTTPException(502, "Sourced trade research did not complete")
 
@@ -414,7 +542,9 @@ def register_market_routes(app, authorize, scheduler_bearer):
         )
         if len(evidence) != len(entry.evidence_ids):
             raise HTTPException(409, "Trade synthesis requires existing cited market observations")
-        return synthesize(entry)
+        from app.trade_audit import persist_trade_result
+        result = synthesize(entry)
+        return await persist_trade_result(store, result, method="rule_based")
 
     @app.post("/v1/market/assessments")
     async def record_market_assessment(

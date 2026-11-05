@@ -1,5 +1,6 @@
 """Market domain contract, temporal replay and API authorization regression tests."""
 import copy
+import asyncio
 from datetime import datetime, timezone
 import hashlib
 
@@ -198,3 +199,43 @@ def test_public_endpoint_bounded_for_free_service(client):
     for _ in range(60):
         assert client.get("/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z").status_code == 200
     assert client.get("/v1/market/public-snapshot").status_code == 429
+
+
+def test_no_future_created_live_scenario_or_future_collector_health_in_history():
+    class HistoryStore(FakeMarketStore):
+        async def rows(self, table, **kw):
+            if table == "market_feed_runs":
+                return [{"finished_at": "2026-11-05T23:00:00Z", "status": "completed",
+                         "provider_results": [{"provider": "cboe_vix", "status": "completed",
+                                               "latest_session": "2026-11-05"}]}]
+            return await super().rows(table, **kw)
+    history = HistoryStore(
+        observations=[EARLY],
+        assessments=[
+            {"id": 1, "mode": "live", "as_of": "2026-11-03T12:00:00Z",
+             "created_at": "2026-11-05T23:00:00Z", "scenario": "further_downside"},
+            {"id": 2, "mode": "replay", "as_of": "2026-11-03T12:00:00Z",
+             "created_at": "2026-11-05T23:00:00Z", "scenario": "further_downside"}
+        ],
+    )
+    live = asyncio.run(snapshot(history, as_of=CUT, mode="live"))
+    assert not live["scenarios"]
+    assert not live["feed_health"]
+    replay = asyncio.run(snapshot(history, as_of=CUT, mode="replay"))
+    assert replay["scenarios"]["further_downside"]["id"] == 2
+    assert replay["radar"]["actual_earlier_alert"] is False
+    assert not replay["feed_health"]
+
+
+def test_feed_health_is_not_synonymous_with_fresh_tradable_quote():
+    class OlderFeedStore(FakeMarketStore):
+        async def rows(self, table, **kw):
+            if table == "market_feed_runs":
+                return [{"finished_at": "2026-11-05T22:40:00Z", "status": "completed",
+                         "provider_results": [{"provider": "cboe_vix", "status": "completed",
+                                               "latest_session": "2026-10-29"}]}]
+            return await super().rows(table, **kw)
+    status = asyncio.run(snapshot(OlderFeedStore(), as_of=datetime(
+        2026, 11, 5, 23, tzinfo=timezone.utc), mode="live"))
+    assert status["feed_health"]["cboe_vix"]["freshness"] == "stale_or_unknown"
+    assert status["coverage"]["price_feed"] == "not_connected"

@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 import httpx
 from defusedxml import ElementTree
 
-from app.market import MarketObservation
+from app.market import MarketObservation, expected_completed_market_session
 
 TREASURY_URL_TEMPLATE = (
     "https://home.treasury.gov/resource-center/data-chart-center/"
@@ -250,17 +250,30 @@ async def run_market_feed(store, run_key: str, trigger: str) -> dict:
                         })
                         count += 1
                         added += int(result.get("created", False))
-                    results.append({"provider": provider, "status": "completed", "readings": count,
-                                    "new_records": added, "latest_session": readings[-1].session.isoformat()})
+                    session = max(r.session for r in readings)
+                    stale = session < expected_completed_market_session(datetime.now(timezone.utc))
+                    source_status = "stale" if stale else "completed"
+                    results.append({"provider": provider, "status": source_status,
+                                    "readings": count, "new_records": added,
+                                    "latest_session": session.isoformat(),
+                                    "validation": "expected_latest_completed_us_session_weekday_only"})
+                    if stale:
+                        status = "partial"
                 except Exception as exc:
                     # Do not leak third-party body or tokens; preserve source-level failure.
                     error = "http_or_timeout" if isinstance(exc, (httpx.HTTPError, asyncio.TimeoutError)) else "invalid_or_unavailable_feed"
                     results.append({"provider": provider, "status": "failed", "reason": error})
                     status = "partial"
+            from app.market_sec import collect_sec_filings
+            sec = await collect_sec_filings(store)
+            results.append(sec)
+            # Not configured is explicit coverage gap, not a failure of enabled feeds.
+            if sec["status"] in ("partial", "failed"):
+                status = "partial"
     except Exception:
         results.append({"provider": "collector", "status": "failed", "reason": "total_run_bound"})
         status = "partial"
-    if not any(x["status"] == "completed" for x in results):
+    if not any(x["status"] in ("completed", "stale") for x in results):
         status = "failed"
     receipt = {"status": status, "finished_at": datetime.now(timezone.utc).isoformat(),
                "provider_results": results, "error_summary": "" if status == "completed" else "One or more public feeds unavailable"}
