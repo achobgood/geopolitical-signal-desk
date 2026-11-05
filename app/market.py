@@ -537,6 +537,16 @@ def register_market_routes(app, authorize, scheduler_bearer):
         except ValueError:
             raise HTTPException(422, "Invalid ticker")
 
+    @app.get("/v1/market/vendor-technical/{ticker}")
+    async def vendor_technical_route(ticker: str, actor=Depends(authorize)):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Owner authorization required for licensed stock market data")
+        from app.market_quotes import vendor_technical_research
+        try:
+            return await vendor_technical_research(ticker)
+        except ValueError:
+            raise HTTPException(422, "Invalid ticker")
+
     @app.get("/v1/market/trade-synthesis/status", dependencies=[Depends(authorize)])
     async def trade_synthesis_status():
         """Market-wide readiness; this endpoint never returns positions or account data."""
