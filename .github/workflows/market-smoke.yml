@@ -30,6 +30,23 @@ jobs:
           assert replay.get("desk") == live.get("desk") == "market"
           assert replay.get("mode") == "replay" and live.get("mode") == "live"
           assert replay["radar"]["actual_earlier_alert"] is False
+          assert replay.get("watch_signals") == [], "No retrospective pre-crash watch should be invented"
+          watches = live.get("watch_signals", [])
+          assert watches, "Live database must expose a persisted, sourced watch"
+          assert any(w.get("rule_id") == "vxn_5day_spike"
+                     and float(w.get("observed_value", 0)) >= 20
+                     and w.get("not_an_advance_alert") is True
+                     for w in watches), "Measured Cboe VXN confirmation missing"
+          for watch in watches:
+              assert watch["first_detected_at"] >= watch["source_first_seen_at"]
+              assert watch["source_url"].startswith("https://")
+              assert watch["signal_type"] == "market_confirmation_only"
+          revisions = [o for o in live["observations"]
+                       if o.get("publisher") == "Associated Press"]
+          assert len(revisions) == 4
+          assert all(o.get("source_review") == "canonical_link" for o in revisions)
+          assert all(o["source_url"].endswith("/7ee9c212805aa5e70cf34d25aab7a36e")
+                     for o in revisions)
           assert len(replay["observations"]) >= 5
           assert len(live["observations"]) >= 5
           assert replay["coverage"]["price_feed"] == "not_connected"
@@ -37,3 +54,7 @@ jobs:
           assert not ("supabase_key" in live or "geopolitical_leads" in live)
           print("MARKET_DESK_SMOKE_OK",len(replay["observations"]),len(live["observations"]))
           PY
+          PRIVATE_STATUS=$(curl -sS -o /tmp/trade-history-unauthorized.json -w '%{http_code}' --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/trade-synthesis/history")
+          test "$PRIVATE_STATUS" = "401"
+          WATCH_STATUS=$(curl -sS -o /tmp/watch-unauthorized.json -w '%{http_code}' --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/watch-signals")
+          test "$WATCH_STATUS" = "401"
