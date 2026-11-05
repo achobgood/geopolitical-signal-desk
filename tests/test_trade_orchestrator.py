@@ -107,6 +107,9 @@ class FakeStore:
     async def request(self, method, path, **kw):
         self.calls.append(path)
         return [{"id": 1}, {"id": 2}]
+    async def rpc(self, name, payload):
+        assert name == "market_record_decision_v1"
+        return {"stored_privately": True, "orders_placed": False, "decision_id": 3}
 
 
 def test_auto_route_rejects_unauthorized_portfolio(monkeypatch):
