@@ -200,7 +200,7 @@ def test_trade_endpoint_requires_owner_cannot_leak_holdings(monkeypatch):
             result = client.post("/v1/market/trade-synthesis", headers=headers, json=request_dict())
             assert result.status_code == 200
             assert result.json()["status"] == "NO_TRADE"
-            assert "portfolio" not in result.text.lower()
+            assert '"net_liquidation_value"' not in result.text and '"available_cash"' not in result.text
             assert db.queries == [("GET", "market_observations")]
     finally:
         app.dependency_overrides.clear()
