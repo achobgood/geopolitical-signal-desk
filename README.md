@@ -90,3 +90,20 @@ Deploy the Dockerfile as **one Free web service** in the confirmed `My Workspace
 Render Free can sleep after 15 idle minutes and cold starts can take about a minute. In-process scheduling is deliberately absent: it cannot provide dependable unattended hourly collection on a sleeping service. No paid cron, worker, database or duplicate ChatGPT automation is provisioned. Free service compute is $0; usage quotas still apply. The existing Supabase project's previously quoted $0 plan is reused, and this code does not change its billing plan.
 
 Keep **Geopolitical Escalation Watch II** enabled. The user authorized appending Site writeback without changing its research, hourly schedule or alert rules. A manual Run now saved five real-source observations in collection run30; a clock-triggered run of this modified watch remains a separate acceptance step. The prior one-time cloud writer test passed; neither proves notification replacement.
+
+
+## Market Intelligence (additive feature)
+
+Market Intelligence is a separate evidence-led stock-market research desk, using
+dedicated source records and historical cutoff validation. A read-only dashboard
+is served at /market by the **same** Render service, with /v1/market/snapshot
+for authorized readers. The public readout intentionally contains only public
+market research. See [Market Intelligence design, rollout and coverage](docs/market-intelligence.md).
+
+The market model tracks AI credit financing, returns on capex, permits/regulation,
+earnings, rates, broad market confirmation and geopolitical spillover.
+Historical replay is clearly labeled **retrospective**: earlier publication
+does not mean this platform was running or alerted at the time.
+Price feeds, credit feeds, autonomous market research and trade execution
+are **not** currently connected. The original geopolitical tools, alerts and
+Site remain unaffected.

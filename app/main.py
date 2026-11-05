@@ -20,7 +20,7 @@ from app.providers import coverage
 from app.search_intake import SearchBatch, import_search_batch
 from app.analysis import EventReview, persist_review
 
-app = FastAPI(title="Geopolitical Signal Desk", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Signal Desk", version="1.1.0", docs_url=None, redoc_url=None, openapi_url=None)
 bearer = HTTPBearer(auto_error=False)
 requests = deque()
 
@@ -111,7 +111,7 @@ async def openapi():
 @app.get("/ready", dependencies=[Depends(authorize)])
 async def ready(store=Depends(get_store)):
     result = await store.rpc("signal_ready_v1", {})
-    if result.get("schema_version") != 1 or result.get("rls_tables") != 12 or result.get("end_user_policies") != 0:
+    if result.get("schema_version") != 1 or result.get("rls_tables", 0) < 12 or result.get("end_user_policies") != 0:
         raise StoreUnavailable()
     return {"status": "ready", "schema_version": 1}
 
@@ -256,3 +256,8 @@ async def scheduled(value: PipelineIn, credentials: HTTPAuthorizationCredentials
 async def collect_fed(store=Depends(get_store)):
     result = await collect(store, ingest)
     return JSONResponse(result, status_code=200 if result["run_status"] == "completed" else 502)
+
+
+# Additive market domain. Existing geopolitical routes and access controls remain unchanged.
+from app.market import register_market_routes
+register_market_routes(app, authorize)

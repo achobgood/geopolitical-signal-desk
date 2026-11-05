@@ -1,0 +1,31 @@
+name: Market Desk and Existing Signal Desk Regression
+on:
+  push:
+    branches: [main, feature/market-intelligence-desk]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Compile Python source
+        run: python -m compileall -q app tests
+      - name: Run full suite
+        run: python -m pytest -q
+      - name: Check dashboard JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path("app/market_dashboard.html").read_text()
+          script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+          Path("/tmp/signal-desk-market.js").write_text(script)
+          PY
+          node --check /tmp/signal-desk-market.js

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market Intelligence | Signal Desk</title>
+<style>
+:root{color-scheme:dark;--bg:#09111a;--panel:#14202d;--edge:#2d3c4a;--ink:#edf3f6;--muted:#9ab0be;--mint:#62dfc2;--amber:#e9c485;--coral:#f3a38d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 70% 0%,#1c3741 0,transparent 55%),var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--mint);text-decoration:none}a:hover{text-decoration:underline}
+main{max-width:1450px;margin:auto;padding:22px 35px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid var(--edge);padding:8px 0 25px}
+.brand{font-weight:800;letter-spacing:.08em;display:flex;align-items:center;gap:10px}
+.brand b{background:#22584c;color:#8cecd5;border-radius:8px;padding:8px}
+nav{display:flex;gap:8px;align-items:center}nav a,nav span{border:1px solid var(--edge);padding:8px 13px;border-radius:8px;color:var(--muted)}nav .active{color:var(--mint);border-color:#4d8e80;background:#18362e}
+.hero{display:grid;grid-template-columns:1fr auto;align-items:end;gap:30px;padding:43px 0 22px}
+.eyebrow{color:var(--mint);font-size:11px;letter-spacing:.17em;font-weight:800}
+h1{font-size:clamp(31px,4vw,55px);line-height:1.08;letter-spacing:-.05em;margin:12px 0 15px}h2{font-size:17px;margin:0 0 12px}
+p{color:var(--muted);font-size:15px;max-width:710px;margin:0}
+.controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+button,input{font:inherit;border-radius:8px;border:1px solid var(--edge);background:#10202b;color:var(--ink);padding:10px 12px}
+button{cursor:pointer}button.active{color:var(--mint);border-color:#4e9a89;background:#193f35}
+input{max-width:220px}.presets{text-align:right;margin:0 0 24px}.presets button{font-size:12px;padding:7px 11px;margin-left:5px}
+#status{color:var(--muted);font-size:12px;min-height:20px;margin-bottom:10px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin:10px 0 19px}
+.stat,.panel{border:1px solid var(--edge);border-radius:12px;background:linear-gradient(135deg,#172433,#111a25)}
+.stat{padding:19px}.caption{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.big{font-weight:760;font-size:22px;line-height:1.15;margin:13px 0 9px;letter-spacing:-.03em}.danger{color:var(--coral)}.soft{color:var(--amber)}
+.detail{color:var(--muted);font-size:12px}
+.grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:18px}
+.panel{padding:22px;min-width:0}.panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.panel-heading small{font-size:10px;color:var(--muted);letter-spacing:.08em}
+.family,.measure{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 0;border-top:1px solid var(--edge)}
+.family b,.measure b{font-weight:680}.chip{font-size:11px;background:#21433f;border:1px solid #386e64;border-radius:6px;padding:4px 9px;color:var(--mint)}
+.callout{margin-top:17px;border-left:2px solid var(--mint);border-radius:4px;padding:13px 15px;background:#152b32;color:#c2d6d8;font-size:12px}
+.scenario{border:1px solid var(--edge);border-radius:9px;background:#12202d;margin:12px 0;padding:14px 15px}
+.scenario b{display:block;margin-bottom:8px}.scenario div{font-size:12px;color:#d1dce4;margin-top:6px}.scenario .qual{color:var(--muted)}
+.section{margin-top:18px}.entry{padding:18px 0;border-top:1px solid var(--edge)}.entry .meta{color:var(--muted);font-size:11px;margin-bottom:7px}
+.tag{display:inline-block;border:1px solid #435366;padding:2px 5px;border-radius:4px;margin-right:5px;color:#d3dce5;text-transform:uppercase;font-size:10px}
+.tag.risk{border-color:#9b6055;color:var(--coral)}
+.tag.good{border-color:#487e70;color:var(--mint)}
+.entry .title{font-size:15px;font-weight:700;margin:6px 0}.entry .desc{font-size:13px;color:#c7d5dd;margin:7px 0}
+.empty{color:var(--muted);font-size:13px;padding:20px 0}
+.health{display:grid;grid-template-columns:1fr auto;gap:13px 10px;font-size:12px;color:var(--muted)}
+.health b{font-weight:650;color:#d2e0e7}
+footer{margin-top:27px;border-top:1px solid var(--edge);padding-top:18px;color:var(--muted);font-size:12px}
+@media(max-width:1100px){.hero,.grid{grid-template-columns:1fr}.controls{justify-content:flex-start}.stats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){main{padding:16px}.stats{gap:8px}.stat,.panel{padding:14px}.big{font-size:16px}header{align-items:flex-start;flex-direction:column}.hero{padding-top:27px}.presets{text-align:left}}
+</style>
+</head>
+<body>
+<main>
+<header><div class="brand"><b>◇</b> SIGNAL DESK <span style="color:#8093a1">/</span> <span style="color:var(--mint)">MARKETS</span></div>
+<nav><a href="https://geopolitical-signal-command.boldbaron8.chatgpt.site" target="_blank" rel="noopener noreferrer">Geopolitical Desk</a><span class="active">Market Intelligence</span></nav></header>
+<section class="hero"><div><span class="eyebrow">EARLY INDICATORS / EVIDENCE / MARKET REGIMES</span><h1>Find the pressure<br>before the catalyst.</h1><p>Track funding fragility, monetization, policy, earnings, rates and price confirmation. See what was knowable before a selloff without treating hindsight as an early warning.</p></div>
+<div class="controls"><button id="live" class="active">Live evidence</button><button id="replay">Historical replay</button><input id="cutoff" type="datetime-local" value="2026-11-03T20:00" aria-label="Replay cutoff UTC" hidden><button id="refresh">Refresh</button></div></section>
+<div id="presets" class="presets" hidden><small class="detail">AS-OF UTC</small><button data-asof="2026-10-13T20:00">Oct 13</button><button data-asof="2026-11-03T20:00">Nov 3</button><button data-asof="2026-11-05T21:00">Nov 5 close</button></div>
+<div id="status" role="status" aria-live="polite">Loading sourced market evidence…</div>
+<div class="stats">
+<div class="stat"><div class="caption">Market stress posture</div><div class="big soft" id="posture">—</div><div class="detail">Descriptive, not predictive</div></div>
+<div class="stat"><div class="caption">Risk pressure families</div><div class="big" id="families">—</div><div class="detail">Source-lineage deduplicated</div></div>
+<div class="stat"><div class="caption">Eligible observations</div><div class="big" id="observations">—</div><div class="detail">At selected as-of cutoff</div></div>
+<div class="stat"><div class="caption">Live market feeds</div><div class="big danger" id="coverage">NOT CONNECTED</div><div class="detail">Prices, CDS, breadth, earnings</div></div>
+</div>
+<div class="grid">
+<section class="panel"><div class="panel-heading"><h2>Risk pressure radar</h2><small>EVIDENCE FAMILIES</small></div><div id="family-list"></div><div class="callout" id="limitations">This system does not infer probabilities from article counts.</div></section>
+<section class="panel"><div class="panel-heading"><h2>Scenario desk</h2><small>CONDITIONAL THESIS</small></div><div id="scenarios"></div><div class="callout">A usable outlook needs invalidation triggers and counterevidence. Headline sentiment alone is not a bottom signal.</div></section>
+</div>
+<div class="grid section">
+<section class="panel"><div class="panel-heading"><h2>Evidence timeline</h2><small id="timeline-title">FIRST PUBLICATION → REACTION</small></div><div id="timeline"></div></section>
+<section>
+<div class="panel"><div class="panel-heading"><h2>Market measurements</h2><small>SOURCED OBSERVATIONS</small></div><div id="measurements"></div></div>
+<div class="panel section"><div class="panel-heading"><h2>Collection health</h2><small>NO IMPLIED COVERAGE</small></div><div id="health" class="health"></div></div>
+</section></div>
+<footer>Signal Desk Market Intelligence V1 · Public source data only · No trading or portfolio execution · Retrospective replay is not a previously issued alert.</footer>
+</main>
+<script>
+(function(){
+"use strict";
+var mode="live";
+function $(id){return document.getElementById(id)}
+function add(parent,tag,cls,value){var e=document.createElement(tag);if(cls)e.className=cls;if(value!==undefined)e.textContent=String(value);parent.appendChild(e);return e}
+function empty(id){$(id).replaceChildren()}
+function date(s){var d=new Date(s);return isNaN(d.valueOf())?"Unknown":d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}
+function show(d){
+ var r=d.radar;
+ $("posture").textContent=r.posture;$("posture").className="big "+(r.risk_families.length>1?"danger":"soft");
+ $("families").textContent=r.risk_families.length;$("observations").textContent=r.eligible_observations;
+ $("limitations").textContent=r.limitations+" "+r.method+". No statistical downside probability is provided.";
+ $("coverage").textContent=d.coverage.price_feed==="not_connected"?"NOT CONNECTED":"CHECK SOURCE";
+ $("timeline-title").textContent=mode==="replay"?"PUBLICLY KNOWABLE THEN":"ACTUALLY COLLECTED BY THEN";
+ empty("family-list");
+ if(!r.risk_families.length)add($("family-list"),"div","empty","No eligible risk signals. This may indicate missing collection, not low risk.");
+ r.risk_families.forEach(function(f){var line=add($("family-list"),"div","family");var left=add(line,"div");add(left,"b","",f.label);add(left,"div","detail",f.distinct_origin_groups+" distinct attributed origin group(s)");add(line,"span","chip",f.distinct_origin_groups)});
+ if(r.counterevidence_families.length){add($("family-list"),"h2","","Risk-reducing signals");r.counterevidence_families.forEach(function(f){var line=add($("family-list"),"div","family");add(line,"span","",f.label);add(line,"span","chip",f.distinct_origin_groups)})}
+ empty("scenarios");
+ [["further_downside","Further downside"],["stabilization","Stabilization"],["rebound","Rebound"]].forEach(function(pair){
+  var a=d.scenarios[pair[0]],box=add($("scenarios"),"div","scenario");
+  add(box,"b","",pair[1]);
+  if(!a){add(box,"div","qual","No evidence-bound assessment recorded at this cutoff.");return}
+  add(box,"div","",a.thesis);
+  add(box,"div","qual","Confidence: "+a.confidence+" (not a probability) · "+a.horizon_sessions+" sessions");
+  add(box,"div","qual","Countercase: "+a.countercase);
+  add(box,"div","qual","Invalidation: "+a.falsification);
+  add(box,"div","qual","Next check: "+a.next_check)
+ });
+ empty("timeline");
+ var rows=d.observations.slice().sort(function(a,b){return new Date(a.published_at)-new Date(b.published_at)});
+ if(!rows.length)add($("timeline"),"div","empty","No evidence eligible. No conclusion can be drawn.");
+ rows.forEach(function(o){
+  var card=add($("timeline"),"article","entry"),meta=add(card,"div","meta");
+  add(meta,"span","",date(o.published_at)+" · ");
+  add(meta,"span","tag",o.phase);
+  add(meta,"span","tag "+(o.pressure==="risk_up"?"risk":o.pressure==="risk_down"?"good":""),o.pressure.replace("_"," "));
+  add(meta,"span","",o.family.replaceAll("_"," "));
+  add(card,"div","title",o.source_title);
+  add(card,"div","desc",o.summary);
+  var line=add(card,"div","detail");
+  var link=add(line,"a","",o.publisher);link.href=o.source_url;link.rel="noopener noreferrer";link.target="_blank";
+  add(line,"span",""," · "+o.claim_status+" · Origin: "+o.origin_group);
+  if(o.caveats)add(card,"div","detail","Caveat: "+o.caveats)
+ });
+ empty("measurements");
+ if(!d.latest_metrics.length)add($("measurements"),"div","empty","No verified market price or spread series connected.");
+ d.latest_metrics.forEach(function(m){
+  var line=add($("measurements"),"div","measure"),left=add(line,"div");
+  add(left,"div","",m.code.replaceAll("_"," "));add(left,"div","detail",date(m.published_at)+" · "+m.publisher);
+  add(line,"b","",m.value+" "+(m.unit||""))
+ });
+ empty("health");[
+  ["Live prices",d.coverage.price_feed],["Credit spreads",d.coverage.credit_spread_feed],
+  ["SEC filings",d.coverage.earnings_filings_feed],["Research intake",d.coverage.research_intake],
+  ["Automated alerts",d.coverage.automatic_alert_delivery],["Calibrated prediction",d.coverage.calibrated_forecast?"Validated":"Not validated"]
+ ].forEach(function(k){add($("health"),"span","",k[0]);add($("health"),"b","",String(k[1]).replaceAll("_"," "))});
+ $("status").textContent=(mode==="replay"?"RETROSPECTIVE / NOT A HISTORICAL ALERT":"LIVE / ONLY ACTUALLY COLLECTED EVIDENCE")+" · AS OF "+new Date(d.as_of).toISOString().slice(0,16).replace("T"," ")+" UTC · "+r.observations_from_future_excluded+" observations excluded"
+}
+async function refresh(){
+ $("status").textContent="Loading market research…";
+ var url=new URL("/v1/market/public-snapshot",location.origin);url.searchParams.set("mode",mode);
+ if(mode==="replay"){if(!$("cutoff").value)return;url.searchParams.set("as_of",new Date($("cutoff").value+":00Z").toISOString())}
+ try{var res=await fetch(url,{cache:"no-store"});if(!res.ok)throw new Error("Market store unavailable or schema not deployed ("+res.status+").");show(await res.json())}
+ catch(e){$("status").textContent=e.message}
+}
+function switchMode(next){mode=next;$("live").classList.toggle("active",mode==="live");$("replay").classList.toggle("active",mode==="replay");$("cutoff").hidden=mode==="live";$("presets").hidden=mode==="live";refresh()}
+$("live").addEventListener("click",function(){switchMode("live")});
+$("replay").addEventListener("click",function(){switchMode("replay")});
+$("refresh").addEventListener("click",refresh);$("cutoff").addEventListener("change",refresh);
+document.querySelectorAll("[data-asof]").forEach(function(b){b.addEventListener("click",function(){$("cutoff").value=b.dataset.asof;refresh()})});
+refresh();
+})();
+</script>
+</body></html>
