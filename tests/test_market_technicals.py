@@ -157,6 +157,9 @@ class FakeSourceStore:
             self.technical.append(data)
             return {"created":True,"snapshot_id":len(self.technical),"trade_approved":False}
         raise AssertionError("Unexpected SQL RPC "+name)
+    async def request(self,method,path,**kwargs):
+        assert method=="GET" and path=="market_technical_snapshots"
+        return []
     async def patch(self,table,id,payload):
         self.patches.append(payload);return payload
 
