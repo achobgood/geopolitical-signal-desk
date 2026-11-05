@@ -92,6 +92,26 @@ class MarketObservation(StrictModel):
         return self
 
 
+class MarketAmendment(StrictModel):
+    observation_id: int = Field(gt=0)
+    amendment_kind: Literal["canonical_link", "unavailable", "attribution", "retraction"]
+    corrected_source_url: str | None = None
+    rationale: str = Field(min_length=25, max_length=1500)
+
+    @field_validator("corrected_source_url")
+    @classmethod
+    def validated_link(cls, value):
+        return public_url(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_change(self):
+        if self.amendment_kind == "canonical_link" and not self.corrected_source_url:
+            raise ValueError("A canonical link amendment requires an inspected URL")
+        if self.amendment_kind in ("unavailable", "retraction") and self.corrected_source_url:
+            raise ValueError("Retraction/unavailable records do not pretend to have a new source link")
+        return self
+
+
 class MarketAssessment(StrictModel):
     as_of: datetime
     mode: Literal["live", "replay"]
@@ -191,7 +211,28 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     observations = await store.rows("market_observations", limit=250)
     assessments = await store.rows("market_assessments", limit=100)
     feed_runs = await store.rows("market_feed_runs", limit=12)
-    valid = [o for o in observations if eligible(o, as_of, mode)]
+    amendments = await store.rows("market_source_amendments", limit=100)
+    # Apply only corrections/retractions actually recorded by the historical cutoff.
+    # Original records remain immutable in the database for forensic inspection.
+    corrections = {}
+    for amendment in amendments:
+        if parse_time(amendment["reviewed_at"]) <= as_of:
+            corrections.setdefault(amendment["observation_id"], amendment)
+    effective = []
+    for source in observations:
+        entry = dict(source)
+        amendment = corrections.get(source["id"])
+        if amendment:
+            entry["source_review"] = amendment["amendment_kind"]
+            entry["source_reviewed_at"] = amendment["reviewed_at"]
+            entry["source_review_note"] = amendment["rationale"]
+            if amendment["amendment_kind"] == "canonical_link":
+                entry["original_source_url"] = source["source_url"]
+                entry["source_url"] = amendment["corrected_source_url"]
+            if amendment["amendment_kind"] == "retraction":
+                continue
+        effective.append(entry)
+    valid = [o for o in effective if eligible(o, as_of, mode)]
     latest_by_metric = {}
     for o in valid:
         code = o.get("metric_code")
@@ -237,7 +278,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
                 }
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
-        "radar": radar(observations, as_of=as_of, mode=mode),
+        "radar": radar(effective, as_of=as_of, mode=mode),
         "observations": valid[:150],
         "latest_metrics": list(latest_by_metric.values())[:40],
         "feed_health": feed_health,
@@ -293,6 +334,28 @@ def register_market_routes(app, authorize, scheduler_bearer):
         if cutoff.utcoffset() is None or cutoff > datetime.now(timezone.utc) + timedelta(minutes=5):
             raise HTTPException(422, "Supply a nonfuture timezone-aware as_of")
         return await snapshot(store, as_of=cutoff, mode=mode)
+
+    @app.get("/v1/market/amendments", dependencies=[Depends(authorize)])
+    async def market_amendments(
+        limit: int = Query(50, ge=1, le=100),
+        before: int | None = Query(None, gt=0),
+        store=Depends(get_store),
+    ):
+        return await store.rows("market_source_amendments", limit=limit, before=before)
+
+    @app.post("/v1/market/amendments")
+    async def record_market_amendment(
+        entry: MarketAmendment,
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only owner can correct source references")
+        source = await store.rows("market_observations",limit=1,filters={"id":f"eq.{entry.observation_id}"})
+        if not source:
+            raise HTTPException(404,"Unknown market observation")
+        body = {**entry.model_dump(mode="json"), "reviewed_by": "owner_research"}
+        return await store.insert("market_source_amendments", body)
 
     @app.get("/v1/market/observations", dependencies=[Depends(authorize)])
     async def market_observations(
