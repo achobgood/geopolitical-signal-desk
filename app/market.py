@@ -189,6 +189,12 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     recent_assessments = [
         a for a in assessments
         if a.get("mode") == mode and parse_time(a["as_of"]) <= as_of
+        # Backfilled replay analyses are allowed and explicitly labeled retrospective.
+        # A "live" historical assessment must actually have existed by that cutoff.
+        and (mode == "replay" or (
+            a.get("created_at") is not None
+            and parse_time(a["created_at"]) <= as_of
+        ))
     ]
     latest_scenarios = {}
     for a in recent_assessments:
@@ -198,6 +204,9 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     # Feed health is factual: a completed run and dated session, not an assertion of live quote coverage.
     feed_health = {}
     for run in feed_runs:
+        # Historical replay must never reveal future collection status.
+        if mode == "replay" or not run.get("finished_at") or parse_time(run["finished_at"]) > as_of:
+            continue
         for p in run.get("provider_results") or []:
             name = p.get("provider")
             if name in ("us_treasury", "cboe_vix", "cboe_vxn") and name not in feed_health:
