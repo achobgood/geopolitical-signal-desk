@@ -5,7 +5,7 @@ import hashlib
 
 from fastapi.testclient import TestClient
 from app.main import app, requests
-from app.market import snapshot
+from app.market import snapshot, PUBLIC_REQUESTS
 from app.store import get_store
 
 SOURCE = {
@@ -75,6 +75,7 @@ def test_private_watch_table_route_requires_read_only_or_owner_auth(monkeypatch)
     monkeypatch.setenv("SIGNAL_DESK_API_KEY", owner)
     monkeypatch.setenv("SIGNAL_DESK_READ_KEY_SHA256", hashlib.sha256(read.encode()).hexdigest())
     requests.clear()
+    PUBLIC_REQUESTS.clear()
     app.dependency_overrides[get_store] = Store
     try:
         with TestClient(app) as client:
