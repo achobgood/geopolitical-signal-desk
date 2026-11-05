@@ -163,7 +163,7 @@ class FakeSourceStore:
 
 def test_actual_collector_path_runs_quant_and_cites_persisted_close_row(monkeypatch):
     import app.market_feeds as m
-    from tests.test_market_feeds import treasury_fixture
+    from test_market_feeds import treasury_fixture
     # The fixtures are synthetic and can never appear in deployed market data.
     raw=cboe_fixture(candles())
     async def fetch(url,**kw):
