@@ -139,6 +139,8 @@ def cboe_parse(blob: bytes, *, provider: str, source_url: str, today: date) -> l
     if start is None:
         raise ValueError("Cboe CSV header missing")
     reader = csv.DictReader(io.StringIO("\n".join(lines[start:])))
+    if reader.fieldnames is not None:
+        reader.fieldnames = [name.strip().upper() for name in reader.fieldnames]
     quotes = {}
     for item in reader:
         try:
