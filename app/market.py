@@ -18,6 +18,7 @@ from pydantic import Field, field_validator, model_validator
 
 from app.models import StrictModel, public_url, PipelineIn
 from app.trade_synthesis import TradeSynthesisRequest
+from app.trade_research import ResearchRequest
 from app.store import get_store
 
 PUBLIC_REQUESTS = deque()
@@ -358,6 +359,21 @@ def register_market_routes(app, authorize, scheduler_bearer):
             "no_trade_default": True,
             "note": "No execution, no storage of positions, no implied vendor verification; recommendations are conditional.",
         }
+
+    @app.post("/v1/market/trade-synthesis/research")
+    async def trade_research(
+        entry: ResearchRequest,
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only the owner may request model research")
+        from app.trade_research import propose_research
+        import httpx
+        try:
+            return await propose_research(store, entry)
+        except (ValueError, httpx.HTTPError):
+            raise HTTPException(502, "Market research model did not produce a valid sourced shortlist")
 
     @app.post("/v1/market/trade-synthesis")
     async def trade_synthesis(
