@@ -214,6 +214,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     amendments = await store.rows("market_source_amendments", limit=100)
     watch_records = await store.rows("market_watch_signals", limit=80)
     technical_records = await store.rows("market_technical_snapshots", limit=20)
+    forward_records = await store.rows("market_technical_outcomes", limit=40)
     # Apply only corrections/retractions actually recorded by the historical cutoff.
     # Original records remain immutable in the database for forensic inspection.
     corrections = {}
@@ -337,6 +338,26 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     unique_technical = {}
     for item in technical_readouts:
         unique_technical.setdefault(item["symbol"],item)
+    forward_outcomes = []
+    for result in forward_records:
+        try:
+            if parse_time(result["first_evaluated_at"]) > as_of:
+                continue
+            forward_outcomes.append({
+                "id": result["id"],
+                "symbol": result["symbol"],
+                "baseline_session": result["baseline_session"],
+                "target_session": result["target_session"],
+                "horizon_sessions": result["horizon_sessions"],
+                "baseline_close": result["baseline_close"],
+                "target_close": result["target_close"],
+                "observed_index_change_pct": result["observed_index_change_pct"],
+                "first_evaluated_at": result["first_evaluated_at"],
+                "label": "observed_index_movement_not_trading_return",
+                "not_a_trade_pnl": True,
+            })
+        except (KeyError,TypeError,ValueError):
+            continue
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
         "radar": radar(effective, as_of=as_of, mode=mode),
@@ -346,6 +367,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
         "scenarios": latest_scenarios,
         "watch_signals": visible_watches[:30],
         "technical_readouts": list(unique_technical.values()),
+        "forward_observed_outcomes": forward_outcomes[:20],
         "coverage": {
             "price_feed": "not_connected",
             "credit_spread_feed": "not_connected",
@@ -427,6 +449,16 @@ def register_market_routes(app, authorize, scheduler_bearer):
         store=Depends(get_store),
     ):
         return await store.rows("market_observations", limit=limit, before=before)
+
+    @app.get("/v1/market/technical-outcomes", dependencies=[Depends(authorize)])
+    async def technical_outcome_history(
+        limit: int = Query(30, ge=1, le=50),
+        store=Depends(get_store),
+    ):
+        return await store.request("GET", "market_technical_outcomes", params={
+            "select": "id,symbol,baseline_session,target_session,horizon_sessions,baseline_close,target_close,observed_index_change_pct,first_evaluated_at,outcome_label",
+            "order": "id.desc", "limit": str(limit),
+        })
 
     @app.get("/v1/market/technical-snapshots", dependencies=[Depends(authorize)])
     async def technical_history(
