@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 import time
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Literal
 
@@ -119,6 +120,17 @@ def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def expected_completed_market_session(as_of: datetime):
+    """Conservative weekday-only US close check; holidays may be falsely stale."""
+    ny = as_of.astimezone(ZoneInfo("America/New_York"))
+    day = ny.date()
+    if ny.weekday() < 5 and (ny.hour, ny.minute) < (16, 15):
+        day -= timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day
+
+
 def eligible(row: dict, cutoff: datetime, mode: str) -> bool:
     """A source was knowable when published, but actually monitored only when collected."""
     try:
@@ -218,8 +230,9 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
                     "checked_at": run.get("finished_at"),
                     "run_status": run.get("status"),
                     "freshness": ("stale_or_unknown" if not p.get("latest_session")
-                        or (as_of.date() - datetime.fromisoformat(p["latest_session"]).date()).days > 3
-                        else "recent_daily_session"),
+                        or datetime.fromisoformat(p["latest_session"]).date() <
+                            expected_completed_market_session(as_of)
+                        else "current_completed_session"),
                     "feed_type": "historical_daily_reference_not_live_quote",
                 }
     return {
