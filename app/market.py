@@ -352,12 +352,39 @@ def register_market_routes(app, authorize, scheduler_bearer):
         return await run_market_feed(store, value.run_key, "supabase_cron")
 
 
+    @app.get("/v1/market/data-sources/status", dependencies=[Depends(authorize)])
+    async def market_data_source_status():
+        from app.market_quotes import configuration
+        from app.market_sec import configured_user_agent
+        return {
+            "stock_data": configuration(),
+            "sec_edgar": {
+                "configured": configured_user_agent() is not None,
+                "scope": "official_filing_metadata_only",
+                "contact_value_exposed": False,
+            },
+            "ai_issuer_cds": "not_connected",
+            "broad_market_breadth": "not_connected",
+            "earnings_calendar": "not_connected",
+            "automatic_broker_orders": "disabled",
+        }
+
+    @app.get("/v1/market/vendor-quote/{ticker}", dependencies=[Depends(authorize)])
+    async def market_vendor_quote(ticker: str, actor=Depends(authorize)):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only owner can query licensed vendor data")
+        from app.market_quotes import vendor_snapshot
+        try:
+            return await vendor_snapshot(ticker)
+        except ValueError:
+            raise HTTPException(422, "Invalid ticker")
+
     @app.get("/v1/market/trade-synthesis/status", dependencies=[Depends(authorize)])
     async def trade_synthesis_status():
         """Market-wide readiness; this endpoint never returns positions or account data."""
         return {
             "mode": "research_proposals_only",
-            "live_stock_quote_provider": "not_connected",
+            "live_stock_quote_provider": __import__("app.market_quotes", fromlist=["configuration"]).configuration(),
             "ai_issuer_credit_spread_provider": "not_connected",
             "breadth_provider": "not_connected",
             "private_portfolio_sync": "not_connected",
