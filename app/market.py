@@ -264,17 +264,17 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
             continue
         for p in run.get("provider_results") or []:
             name = p.get("provider")
-            if name in ("us_treasury", "cboe_vix", "cboe_vxn") and name not in feed_health:
+            if name in ("us_treasury", "cboe_vix", "cboe_vxn", "sec_edgar") and name not in feed_health:
                 feed_health[name] = {
                     "status": p.get("status", "unknown"),
                     "latest_session": p.get("latest_session"),
                     "checked_at": run.get("finished_at"),
                     "run_status": run.get("status"),
-                    "freshness": ("stale_or_unknown" if not p.get("latest_session")
+                    "freshness": ("not_applicable" if name == "sec_edgar" else "stale_or_unknown" if not p.get("latest_session")
                         or datetime.fromisoformat(p["latest_session"]).date() <
                             expected_completed_market_session(as_of)
                         else "current_completed_session"),
-                    "feed_type": "historical_daily_reference_not_live_quote",
+                    "feed_type": "filing_metadata_index" if name == "sec_edgar" else "historical_daily_reference_not_live_quote",
                 }
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
