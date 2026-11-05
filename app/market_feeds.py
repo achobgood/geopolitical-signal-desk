@@ -299,6 +299,33 @@ async def run_market_feed(store, run_key: str, trigger: str) -> dict:
                                      "daily_sessions": len(bars),
                                      "price_coverage": analysis["price_coverage"],
                                      "trade_approved": False}
+                            # Compare ONLY already-persisted historical calculations with
+                            # bars first observed in this later official source fetch.
+                            # No synthetic P&L or retroactive alert timing.
+                            seen_outcomes = new_outcomes = pending = 0
+                            earlier = await store.request("GET", "market_technical_snapshots", params={
+                                "select": "id,observed_session",
+                                "provider": f"eq.{provider}",
+                                "order": "id.desc", "limit": "24",
+                            })
+                            for old in earlier:
+                                if old["id"] == receipt["snapshot_id"] or old["observed_session"] >= session.isoformat():
+                                    continue
+                                outcome = await store.rpc("market_record_technical_outcome_v1", {
+                                    "p_baseline_id": old["id"],
+                                    "p_future_id": receipt["snapshot_id"],
+                                })
+                                if outcome["status"] == "PENDING_FUTURE_SESSIONS":
+                                    pending += 1
+                                elif outcome["status"] == "OBSERVED_NOT_TRADING_RETURN":
+                                    seen_outcomes += 1
+                                    new_outcomes += int(outcome["created"])
+                            quant["forward_observation"] = {
+                                "status": "checked", "stored_outcomes": new_outcomes,
+                                "already_recorded": seen_outcomes - new_outcomes,
+                                "pending_five_session_windows": pending,
+                                "label": "volatility_index_change_not_portfolio_return",
+                            }
                         except Exception:
                             quant = {"status": "unavailable",
                                      "reason": "incomplete_ohlc_history_or_quant_persistence_failed"}
