@@ -90,7 +90,7 @@ function show(d){
  $("timeline-title").textContent=mode==="replay"?"PUBLICLY KNOWABLE THEN":"ACTUALLY COLLECTED BY THEN";
  empty("family-list");
  if(!r.risk_families.length)add($("family-list"),"div","empty","No eligible risk signals. This may indicate missing collection, not low risk.");
- r.risk_families.forEach(function(f){var line=add($("family-list"),"div","family");var left=add(line,"div");add(left,"b","",f.label);add(left,"div","detail",f.distinct_origin_groups+" attributed independent origins");add(line,"span","chip",f.distinct_origin_groups)});
+ r.risk_families.forEach(function(f){var line=add($("family-list"),"div","family");var left=add(line,"div");add(left,"b","",f.label);add(left,"div","detail",f.distinct_origin_groups+" distinct attributed origin group(s)");add(line,"span","chip",f.distinct_origin_groups)});
  if(r.counterevidence_families.length){add($("family-list"),"h2","","Risk-reducing signals");r.counterevidence_families.forEach(function(f){var line=add($("family-list"),"div","family");add(line,"span","",f.label);add(line,"span","chip",f.distinct_origin_groups)})}
  empty("scenarios");
  [["further_downside","Further downside"],["stabilization","Stabilization"],["rebound","Rebound"]].forEach(function(pair){
