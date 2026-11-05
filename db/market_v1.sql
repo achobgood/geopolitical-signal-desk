@@ -108,10 +108,10 @@ declare
   v_mode text := payload->>'mode';
   v_created boolean := false;
 begin
-  select coalesce(array_agg(x::bigint), '{}'::bigint[]) into v_ids
-  from jsonb_array_elements_text(coalesce(payload->'evidence_ids','[]'::jsonb)) as x;
+  select coalesce(array_agg(x.value::bigint), '{}'::bigint[]) into v_ids
+  from jsonb_array_elements_text(coalesce(payload->'evidence_ids','[]'::jsonb)) as x(value);
   if coalesce(p_key,'') = '' or cardinality(v_ids) < 1 or cardinality(v_ids) > 20
-     or (select count(distinct x) from unnest(v_ids) x) <> cardinality(v_ids)
+     or (select count(distinct x.value) from unnest(v_ids) as x(value) <> cardinality(v_ids)
      or v_as_of > now() + interval '5 minutes'
      or v_mode not in ('live','replay') then
     raise exception 'Invalid market assessment';
