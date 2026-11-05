@@ -12,10 +12,11 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from pydantic import Field, field_validator, model_validator
 
-from app.models import StrictModel, public_url
+from app.models import StrictModel, public_url, PipelineIn
 from app.store import get_store
 
 PUBLIC_REQUESTS = deque()
@@ -226,7 +227,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     }
 
 
-def register_market_routes(app, authorize):
+def register_market_routes(app, authorize, scheduler_bearer):
     """Mount independent market API and its read-only, public-source dashboard."""
     from app.main import fingerprint
     from pathlib import Path
@@ -308,7 +309,7 @@ def register_market_routes(app, authorize):
 
     @app.post("/v1/market/feeds/run")
     async def market_feed_manual(
-        value: __import__("app.models", fromlist=["PipelineIn"]).PipelineIn,
+        value: PipelineIn,
         actor=Depends(authorize),
         store=Depends(get_store),
     ):
@@ -317,8 +318,8 @@ def register_market_routes(app, authorize):
 
     @app.post("/v1/market/feeds/scheduled")
     async def market_feed_scheduled(
-        value: __import__("app.models", fromlist=["PipelineIn"]).PipelineIn,
-        credentials: __import__("fastapi.security", fromlist=["HTTPAuthorizationCredentials"]).HTTPAuthorizationCredentials | None = Depends(__import__("app.main", fromlist=["bearer"]).bearer),
+        value: PipelineIn,
+        credentials: HTTPAuthorizationCredentials | None = Depends(scheduler_bearer),
         store=Depends(get_store),
     ):
         # Reuse the existing, dedicated scheduler-only Vault secret.
