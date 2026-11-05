@@ -1,5 +1,6 @@
 """Market domain contract, temporal replay and API authorization regression tests."""
 import copy
+import asyncio
 from datetime import datetime, timezone
 import hashlib
 
@@ -198,3 +199,42 @@ def test_public_endpoint_bounded_for_free_service(client):
     for _ in range(60):
         assert client.get("/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z").status_code == 200
     assert client.get("/v1/market/public-snapshot").status_code == 429
+
+
+def test_live_historical_view_never_shows_backfilled_future_assessment_or_feed():
+    class TimedStore(FakeMarketStore):
+        async def rows(self, table, **kwargs):
+            if table == "market_feed_runs":
+                return [{
+                    "finished_at": "2026-11-05T22:00:00Z",
+                    "status": "completed",
+                    "provider_results": [{"provider": "cboe_vix", "status": "completed", "latest_session": "2026-11-05"}],
+                }]
+            return await super().rows(table, **kwargs)
+
+    scenarios = [
+        {
+            "id": 1, "as_of": "2026-11-02T20:00:00Z",
+            "created_at": "2026-11-05T22:00:00Z",
+            "mode": "live", "scenario": "further_downside",
+            "thesis": "Retrospective later assessment must not masquerade as a live decision.",
+        },
+        {
+            "id": 2, "as_of": "2026-11-02T20:00:00Z",
+            "created_at": "2026-11-05T22:00:00Z",
+            "mode": "replay", "scenario": "further_downside",
+            "thesis": "Explicit retrospective case study.",
+        },
+    ]
+    store = TimedStore(observations=[EARLY], assessments=scenarios)
+    live_then = asyncio.run(snapshot(store, as_of=CUT, mode="live"))
+    assert live_then["scenarios"] == {}
+    assert live_then["feed_health"] == {}
+    replay_then = asyncio.run(snapshot(store, as_of=CUT, mode="replay"))
+    assert replay_then["scenarios"]["further_downside"]["mode"] == "replay"
+    assert replay_then["feed_health"] == {}
+    live_now = asyncio.run(snapshot(
+        store, as_of=datetime(2026, 11, 5, 23, 0, tzinfo=timezone.utc), mode="live"
+    ))
+    assert live_now["scenarios"]["further_downside"]["id"] == 1
+    assert live_now["feed_health"]["cboe_vix"]["status"] == "completed"
