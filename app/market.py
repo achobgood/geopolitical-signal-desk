@@ -192,6 +192,11 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     recent_assessments = [
         a for a in assessments
         if a.get("mode") == mode and parse_time(a["as_of"]) <= as_of
+        # Backfilled "live" assessments must not appear in earlier live histories.
+        and (mode == "replay" or (
+            a.get("created_at") is not None
+            and parse_time(a["created_at"]) <= as_of
+        ))
     ]
     latest_scenarios = {}
     for a in recent_assessments:
@@ -201,6 +206,9 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     # Feed health is factual: a completed run and dated session, not an assertion of live quote coverage.
     feed_health = {}
     for run in feed_runs:
+        # Replay is a historical research view, not a picture of later collection health.
+        if mode == "replay" or not run.get("finished_at") or parse_time(run["finished_at"]) > as_of:
+            continue
         for p in run.get("provider_results") or []:
             name = p.get("provider")
             if name in ("us_treasury", "cboe_vix", "cboe_vxn") and name not in feed_health:
@@ -209,6 +217,10 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
                     "latest_session": p.get("latest_session"),
                     "checked_at": run.get("finished_at"),
                     "run_status": run.get("status"),
+                    "freshness": ("stale_or_unknown" if not p.get("latest_session")
+                        or (as_of.date() - datetime.fromisoformat(p["latest_session"]).date()).days > 3
+                        else "recent_daily_session"),
+                    "feed_type": "historical_daily_reference_not_live_quote",
                 }
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
