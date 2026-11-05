@@ -476,6 +476,16 @@ def register_market_routes(app, authorize, scheduler_bearer):
             "note": "No execution, no storage of positions, no implied vendor verification; recommendations are conditional.",
         }
 
+    @app.get("/v1/market/trade-synthesis/history")
+    async def private_trade_history(
+        limit: int = Query(20, ge=1, le=100),
+        actor=Depends(authorize),
+        store=Depends(get_store),
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Private trade decisions require the owner credential")
+        return await store.rpc("market_decision_history_v1", {"p_limit": limit})
+
     @app.post("/v1/market/trade-synthesis/research")
     async def trade_research(
         entry: ResearchRequest,
@@ -509,7 +519,10 @@ def register_market_routes(app, authorize, scheduler_bearer):
         if len(evidence) != len(entry.trade.evidence_ids):
             raise HTTPException(409, "Auto-synthesis requires existing research references")
         try:
-            return await run_auto_synthesis(store, entry)
+            result = await run_auto_synthesis(store, entry)
+            from app.trade_audit import persist_trade_result
+            method = "ai_researched" if result.get("research", {}).get("status") == "RESEARCH_ONLY" else "rule_based"
+            return await persist_trade_result(store, result, method=method)
         except (ValueError, httpx.HTTPError):
             raise HTTPException(502, "Sourced trade research did not complete")
 
@@ -529,7 +542,9 @@ def register_market_routes(app, authorize, scheduler_bearer):
         )
         if len(evidence) != len(entry.evidence_ids):
             raise HTTPException(409, "Trade synthesis requires existing cited market observations")
-        return synthesize(entry)
+        from app.trade_audit import persist_trade_result
+        result = synthesize(entry)
+        return await persist_trade_result(store, result, method="rule_based")
 
     @app.post("/v1/market/assessments")
     async def record_market_assessment(
