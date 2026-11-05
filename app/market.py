@@ -5,7 +5,8 @@ may use subsequently discovered old articles but is NEVER a previously-issued al
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
+import time
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Literal
@@ -16,6 +17,8 @@ from pydantic import Field, field_validator, model_validator
 
 from app.models import StrictModel, public_url
 from app.store import get_store
+
+PUBLIC_REQUESTS = deque()
 
 FAMILIES = {
     "ai_credit": "AI credit and financing",
@@ -227,6 +230,13 @@ def register_market_routes(app, authorize):
         cutoff = as_of or datetime.now(timezone.utc)
         if cutoff.utcoffset() is None or cutoff > datetime.now(timezone.utc) + timedelta(minutes=5):
             raise HTTPException(422, "Supply a nonfuture timezone-aware as_of")
+        # Global single-process throttle protects free service from accidental unbounded reads.
+        now = time.monotonic()
+        while PUBLIC_REQUESTS and PUBLIC_REQUESTS[0] < now - 60:
+            PUBLIC_REQUESTS.popleft()
+        if len(PUBLIC_REQUESTS) >= 60:
+            raise HTTPException(429, "Public market view request limit reached")
+        PUBLIC_REQUESTS.append(now)
         # Only public market research observations; never private portfolio or geopolitical tables.
         return await snapshot(store, as_of=cutoff, mode=mode)
 
