@@ -78,6 +78,11 @@ footer{margin-top:27px;border-top:1px solid var(--edge);padding-top:18px;color:v
   <div class="callout">Deterministic SMA20/50, Wilder RSI14/ATR14 and confirmed daily/weekly reversal zones from Cboe source prices. VIX and VXN are volatility indices, not stocks. Their support/resistance is research context, never a BUY/SELL recommendation or a prediction of equity direction.</div>
 </section>
 <section class="panel" style="margin-bottom:18px">
+  <div class="panel-heading"><h2>Forward-observed index outcomes</h2><small>ONLY AFTER FIVE ACTUALLY COLLECTED FUTURE SESSIONS</small></div>
+  <div id="outcome-list" class="health" aria-live="polite"></div>
+  <div class="callout">These outcomes measure changes in the VIX/VXN *volatility index* after an earlier, time-stamped quantitative analysis. They are not investment returns, trade wins, or an estimate of predictive accuracy. No outcome can exist until a later official source series is collected.</div>
+</section>
+<section class="panel" style="margin-bottom:18px">
   <div class="panel-heading"><h2>Persisted market watches</h2><small>ACTUAL DETECTION · NOT RETROSPECTIVE PREDICTIONS</small></div>
   <div id="watch-list" aria-live="polite"></div>
   <div class="callout">These are simple daily-data threshold detections. They cannot identify the bottom, calculate a trade, or prove advance warning. Compare source collection and first-detected timestamps before evaluating any claim of early warning.</div>
@@ -105,6 +110,19 @@ function date(s){var d=new Date(s);return isNaN(d.valueOf())?"Unknown":d.toLocal
 function feedLabel(f){
  return f ? (String(f.status).replaceAll("_"," ")+" · session "+(f.latest_session||"unknown")+
      (f.freshness==="stale_or_unknown"?" (STALE)":"")) : "Not collected";
+}
+function renderOutcomes(rows){
+ empty("outcome-list");
+ if(!rows.length){
+  add($("outcome-list"),"div","empty","No eligible future five-session outcome is recorded yet. Pending is not a positive result.");
+  return;
+ }
+ rows.slice(0,14).forEach(function(x){
+  add($("outcome-list"),"span","",x.symbol+" · "+x.baseline_session+" → "+x.target_session);
+  var p=Number(x.observed_index_change_pct);
+  var label=(Number.isFinite(p)?p.toFixed(2):"?")+"% VIX/VXN INDEX change · evaluated "+String(x.first_evaluated_at).replace("T"," ").slice(0,16)+" UTC";
+  add($("outcome-list"),"b","",label);
+ });
 }
 function renderTechnicals(items){
  empty("technical-list");
@@ -154,6 +172,7 @@ function show(d){
  var r=d.radar;
  renderWatches(d.watch_signals||[]);
  renderTechnicals(d.technical_readouts||[]);
+ renderOutcomes(d.forward_observed_outcomes||[]);
  $("posture").textContent=r.posture;$("posture").className="big "+(r.risk_families.length>1?"danger":"soft");
  $("families").textContent=r.risk_families.length;$("observations").textContent=r.eligible_observations;
  $("limitations").textContent=r.limitations+" "+r.method+". No statistical downside probability is provided.";
