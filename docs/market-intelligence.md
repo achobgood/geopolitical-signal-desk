@@ -71,3 +71,39 @@ These are conditional observations, not calibrated forecasts. Good backtests mus
 5. Build properly licensed timed market feeds, dedicated market-side collector/alerts, and a link from the separately hosted ChatGPT Site.
 
 No market database migration or deployment should be described as live until verified separately.
+
+
+## Official daily market reference feeds
+
+The market-only collector adds three bounded public daily sources:
+
+- U.S. Treasury daily 2-year and 10-year par yields, plus the 10-year five-session basis-point change from its official XML feed. These are not AI issuer borrowing costs.
+- Cboe VIX historical daily close and five-session percentage change.
+- Cboe VXN (Nasdaq-100 volatility) historical daily close and five-session percentage change.
+
+Publication time for daily feeds is recorded as first actual server collection.
+The trading-day event_at is a DAY-PRECISION label, not a claim of publication at midnight.
+Historical replay cannot use these records before actual collection. Corrected values
+append a new evidence row for the same session and metric, not overwrite prior data.
+
+A VIX or VXN gain of 20% or more over five sessions is classified as risk-up
+MARKET CONFIRMATION, **never advance warning**. Treasury yield changes are
+ambiguous directionally. Neither implies probability of a further selloff.
+
+### Independent collection and scheduler
+
+- GET /v1/market/feeds/runs: authorized receipts and source failures.
+- POST /v1/market/feeds/run: owner-key-only manual collection.
+- POST /v1/market/feeds/scheduled: narrow existing scheduler Vault key only.
+- db/market_feeds_v1.sql: independent market run ledger, RLS and atomic leases.
+- db/market_feed_scheduler_v1.sql: private pg_net dispatcher without modifying the existing geopolitical job.
+
+The proposed schedule is 15 minutes after UTC hours 0, 13 and 23, every day,
+so end-of-day observations are usually available without treating them as
+live equity quotes. An inaccessible feed is recorded as failed or partial,
+not a zero movement or an all-clear.
+
+These do NOT provide live stock/ETF prices, issuer-specific AI CDS or bonds,
+full SEC earnings parsing, financing counterparty analysis, calibrated forecasts,
+or automatic trading or alerts. Those require separate licensed/verified data
+and validation. Never claim this is a fully automated AI credit-risk engine.
