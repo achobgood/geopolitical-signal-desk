@@ -180,6 +180,10 @@ class Store:
             return [{"id": 1, "published_at": "2026-11-03T21:00:00Z"},
                     {"id": 2, "published_at": "2026-11-03T21:00:00Z"}]
         return []
+    async def rpc(self, name, payload):
+        assert name == "market_record_decision_v1"
+        assert "portfolio" not in payload["payload"]
+        return {"stored_privately": True, "orders_placed": False, "decision_id": 1}
 
 
 def test_trade_endpoint_requires_owner_cannot_leak_holdings(monkeypatch):
