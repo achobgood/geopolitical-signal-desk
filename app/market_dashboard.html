@@ -92,6 +92,10 @@ function $(id){return document.getElementById(id)}
 function add(parent,tag,cls,value){var e=document.createElement(tag);if(cls)e.className=cls;if(value!==undefined)e.textContent=String(value);parent.appendChild(e);return e}
 function empty(id){$(id).replaceChildren()}
 function date(s){var d=new Date(s);return isNaN(d.valueOf())?"Unknown":d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}
+function feedLabel(f){
+ return f ? (String(f.status).replaceAll("_"," ")+" · session "+(f.latest_session||"unknown")+
+     (f.freshness==="stale_or_unknown"?" (STALE)":"")) : "Not collected";
+}
 function show(d){
  var r=d.radar;
  $("posture").textContent=r.posture;$("posture").className="big "+(r.risk_families.length>1?"danger":"soft");
@@ -130,6 +134,13 @@ function show(d){
   var line=add(card,"div","detail");
   var link=add(line,"a","",o.publisher);link.href=o.source_url;link.rel="noopener noreferrer";link.target="_blank";
   add(line,"span",""," · "+o.claim_status+" · Origin: "+o.origin_group);
+  if(o.source_review){
+    add(card,"div","detail","Source review: "+o.source_review+" · "+(o.source_review_note||""));
+    if(o.original_source_url){
+      var prior=add(card,"div","detail"),before=add(prior,"a","","Original stored URL (superseded)");
+      before.href=o.original_source_url;before.target="_blank";before.rel="noopener noreferrer";
+    }
+  }
   if(o.caveats)add(card,"div","detail","Caveat: "+o.caveats)
  });
  empty("measurements");
@@ -143,9 +154,10 @@ function show(d){
   ["Live prices",d.coverage.price_feed],["Credit spreads",d.coverage.credit_spread_feed],
   ["SEC filings",d.coverage.earnings_filings_feed],["Research intake",d.coverage.research_intake],
   ["Automated alerts",d.coverage.automatic_alert_delivery],["Calibrated prediction",d.coverage.calibrated_forecast?"Validated":"Not validated"],
-  ["Treasury daily yields",(d.feed_health.us_treasury||{}).status||"Not collected"],
-  ["Cboe VIX historical",(d.feed_health.cboe_vix||{}).status||"Not collected"],
-  ["Cboe VXN historical",(d.feed_health.cboe_vxn||{}).status||"Not collected"]
+  ["Treasury daily yields",feedLabel(d.feed_health.us_treasury)],
+  ["Cboe VIX historical",feedLabel(d.feed_health.cboe_vix)],
+  ["Cboe VXN historical",feedLabel(d.feed_health.cboe_vxn)],
+  ["SEC issuer filing metadata",(d.feed_health.sec_edgar||{}).status||"Not configured"]
  ].forEach(function(k){add($("health"),"span","",k[0]);add($("health"),"b","",String(k[1]).replaceAll("_"," "))});
  $("status").textContent=(mode==="replay"?"RETROSPECTIVE / NOT A HISTORICAL ALERT":"LIVE / ONLY ACTUALLY COLLECTED EVIDENCE")+" · AS OF "+new Date(d.as_of).toISOString().slice(0,16).replace("T"," ")+" UTC · "+r.observations_from_future_excluded+" observations excluded"
 }
