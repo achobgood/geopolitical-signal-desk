@@ -4,6 +4,7 @@ create table if not exists public.market_technical_outcomes(
  id bigint generated always as identity primary key,
  baseline_snapshot_id bigint not null references public.market_technical_snapshots(id),
  future_snapshot_id bigint not null references public.market_technical_snapshots(id),
+ symbol text not null check(symbol in ('VIX','VXN')),
  horizon_sessions integer not null default 5 check(horizon_sessions=5),
  baseline_session date not null,
  target_session date not null,
@@ -69,11 +70,11 @@ begin
   raise exception 'Nonpositive official index level';
  end if;
  insert into public.market_technical_outcomes(
-  baseline_snapshot_id,future_snapshot_id,horizon_sessions,
+  baseline_snapshot_id,future_snapshot_id,symbol,horizon_sessions,
   baseline_session,target_session,baseline_close,target_close,
   observed_index_change_pct
  ) values (
-  v_base.id,v_future.id,5,v_base.observed_session,
+  v_base.id,v_future.id,v_base.symbol,5,v_base.observed_session,
   (v_target->>'session')::date,v_close,(v_target->>'close')::numeric,
   round(((v_target->>'close')::numeric/v_close-1)*100,4)
  )
