@@ -212,6 +212,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     assessments = await store.rows("market_assessments", limit=100)
     feed_runs = await store.rows("market_feed_runs", limit=12)
     amendments = await store.rows("market_source_amendments", limit=100)
+    watch_records = await store.rows("market_watch_signals", limit=80)
     # Apply only corrections/retractions actually recorded by the historical cutoff.
     # Original records remain immutable in the database for forensic inspection.
     corrections = {}
@@ -276,6 +277,35 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
                         else "current_completed_session"),
                     "feed_type": "filing_metadata_index" if name == "sec_edgar" else "historical_daily_reference_not_live_quote",
                 }
+    # A source's older publication does not make a later-recorded watch retroactive.
+    visible_source_ids = {int(o["id"]): o for o in valid}
+    visible_watches = []
+    for signal in watch_records:
+        try:
+            if parse_time(signal["first_detected_at"]) > as_of:
+                continue
+            if parse_time(signal["source_first_seen_at"]) > as_of:
+                continue
+            source = visible_source_ids.get(int(signal["observation_id"]))
+            if not source:
+                continue
+            visible_watches.append({
+                "id": signal["id"], "rule_id": signal["rule_id"],
+                "direction": signal["direction"],
+                "signal_type": "market_confirmation_only",
+                "observed_session": signal["observed_session"],
+                "observed_value": signal["observed_value"],
+                "threshold": signal["threshold"], "unit": signal["unit"],
+                "source_url": source["source_url"],
+                "source_title": source["source_title"],
+                "source_observation_id": signal["observation_id"],
+                "source_first_seen_at": signal["source_first_seen_at"],
+                "first_detected_at": signal["first_detected_at"],
+                "limitations": signal["limitations"],
+                "not_an_advance_alert": True,
+            })
+        except (ValueError, TypeError, KeyError):
+            continue
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
         "radar": radar(effective, as_of=as_of, mode=mode),
@@ -283,6 +313,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
         "latest_metrics": list(latest_by_metric.values())[:40],
         "feed_health": feed_health,
         "scenarios": latest_scenarios,
+        "watch_signals": visible_watches[:30],
         "coverage": {
             "price_feed": "not_connected",
             "credit_spread_feed": "not_connected",
@@ -364,6 +395,14 @@ def register_market_routes(app, authorize, scheduler_bearer):
         store=Depends(get_store),
     ):
         return await store.rows("market_observations", limit=limit, before=before)
+
+    @app.get("/v1/market/watch-signals", dependencies=[Depends(authorize)])
+    async def market_watch_signals(
+        limit: int = Query(40, ge=1, le=100),
+        before: int | None = Query(None, gt=0),
+        store=Depends(get_store),
+    ):
+        return await store.rows("market_watch_signals", limit=limit, before=before)
 
     @app.get("/v1/market/assessments", dependencies=[Depends(authorize)])
     async def market_assessments(
