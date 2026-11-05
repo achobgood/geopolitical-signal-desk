@@ -235,7 +235,8 @@ def synthesize(req: TradeSynthesisRequest, *, now: datetime | None = None) -> di
         problems.append("Portfolio NAV does not reconcile with holdings and cash")
 
     regime, bears, bulls, regime_gaps = _market_regime(req.indicators, now, policy)
-    problems.extend(regime_gaps)
+    # Quote and account integrity gate every ticket; incomplete market regime
+    # blocks only discretionary buys/trims, not an owner-specified hard exit.
     # No limit price when market data is incomplete. Exact timing requires current
     # holdings and regular-session quote integrity, not a press headline.
     if problems:
@@ -247,6 +248,21 @@ def synthesize(req: TradeSynthesisRequest, *, now: datetime | None = None) -> di
             "execution": "manual_approval_only", "source_attestation": "caller_supplied_not_independently_verified",
         }
 
+    hard_exit_due = any(
+        p.hard_exit_below is not None and p.ticker in quotes
+        and quotes[p.ticker].last <= p.hard_exit_below
+        and floor_shares(p.shares) >= 1
+        for p in req.portfolio.positions
+    )
+    if regime_gaps and not hard_exit_due:
+        return {
+            "status": "NO_TRADE", "regime": "unavailable", "as_of": now.isoformat(),
+            "tickets": [], "blocked_by": sorted(set(regime_gaps)), "bearish_signals": bears,
+            "bullish_signals": bulls, "evidence_ids": req.evidence_ids,
+            "decision_basis": "Regime evidence insufficient for discretionary trades",
+            "execution": "manual_approval_only",
+            "source_attestation": "caller_supplied_not_independently_verified",
+        }
     holdings = {p.ticker: p for p in req.portfolio.positions}
     ai_value = sum((p.shares * quotes[p.ticker].last for p in req.portfolio.positions if p.category == "ai"), ZERO)
     tickets = []
@@ -277,7 +293,7 @@ def synthesize(req: TradeSynthesisRequest, *, now: datetime | None = None) -> di
             ai_value -= q.last * p.shares
         if len(tickets) >= policy.max_tickets:
             break
-    if regime == "risk_off" and len(tickets) < policy.max_tickets:
+    if not regime_gaps and regime == "risk_off" and len(tickets) < policy.max_tickets:
         for p in sorted((x for x in req.portfolio.positions if x.category == "ai"),
                         key=lambda x: x.shares * quotes[x.ticker].last, reverse=True):
             if any(t["symbol"] == p.ticker for t in tickets):
@@ -308,7 +324,7 @@ def synthesize(req: TradeSynthesisRequest, *, now: datetime | None = None) -> di
             if len(tickets) >= policy.max_tickets:
                 break
 
-    elif regime == "risk_on" and len(tickets) < policy.max_tickets:
+    elif not regime_gaps and regime == "risk_on" and len(tickets) < policy.max_tickets:
         remaining_cash = req.portfolio.available_cash
         ranked = []
         for candidate in req.candidates:
@@ -371,10 +387,10 @@ def synthesize(req: TradeSynthesisRequest, *, now: datetime | None = None) -> di
                 break
     return {
         "status": "PROPOSAL_ONLY" if tickets else "NO_TRADE",
-        "regime": regime, "as_of": now.isoformat(), "tickets": tickets,
-        "blocked_by": [] if tickets else [
+        "regime": "unavailable" if regime_gaps else regime, "as_of": now.isoformat(), "tickets": tickets,
+        "blocked_by": sorted(set(regime_gaps)) if regime_gaps else ([] if tickets else [
             "No candidate met both regime-specific trade trigger and portfolio risk requirements"
-        ],
+        ]),
         "bearish_signals": bears, "bullish_signals": bulls,
         "evidence_ids": req.evidence_ids,
         "decision_basis": "Deterministic rule-based synthesis with explicit price, portfolio and market checks",
