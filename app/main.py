@@ -256,4 +256,8 @@ async def scheduled(value: PipelineIn, credentials: HTTPAuthorizationCredentials
 async def collect_fed(store=Depends(get_store)):
     result = await collect(store, ingest)
     return JSONResponse(result, status_code=200 if result["run_status"] == "completed" else 502)
-\n\n# Additive market domain. Existing geopolitical routes and access controls remain unchanged.\nfrom app.market import register_market_routes\nregister_market_routes(app, authorize)\n
+
+
+# Additive market domain. Existing geopolitical routes and access controls remain unchanged.
+from app.market import register_market_routes
+register_market_routes(app, authorize)
