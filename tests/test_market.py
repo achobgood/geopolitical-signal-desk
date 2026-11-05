@@ -97,7 +97,7 @@ def test_all_private_market_operations_require_writer_or_reader_auth(client):
 
 def test_public_market_only_queries_market_tables(client):
     assert client.get("/market").status_code == 200
-    r = client.get("/v1/market/public-snapshot")
+    r = client.get("/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z")
     assert r.status_code == 200
     assert r.json()["desk"] == "market"
     assert all(call[1].startswith("market_") for call in client.fake.calls)
