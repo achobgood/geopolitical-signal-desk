@@ -72,6 +72,11 @@ footer{margin-top:27px;border-top:1px solid var(--edge);padding-top:18px;color:v
 </div>
 <div class="callout">If a protective sell level you set is reached, the engine can still produce a reviewable SELL ticket using a fresh quote. Discretionary trades require complete market-regime evidence. This public view never exposes positions or account details.</div>
 </section>
+<section class="panel" style="margin-bottom:18px">
+  <div class="panel-heading"><h2>Persisted market watches</h2><small>ACTUAL DETECTION · NOT RETROSPECTIVE PREDICTIONS</small></div>
+  <div id="watch-list" aria-live="polite"></div>
+  <div class="callout">These are simple daily-data threshold detections. They cannot identify the bottom, calculate a trade, or prove advance warning. Compare source collection and first-detected timestamps before evaluating any claim of early warning.</div>
+</section>
 <div class="grid">
 <section class="panel"><div class="panel-heading"><h2>Risk pressure radar</h2><small>EVIDENCE FAMILIES</small></div><div id="family-list"></div><div class="callout" id="limitations">This system does not infer probabilities from article counts.</div></section>
 <section class="panel"><div class="panel-heading"><h2>Scenario desk</h2><small>CONDITIONAL THESIS</small></div><div id="scenarios"></div><div class="callout">A usable outlook needs invalidation triggers and counterevidence. Headline sentiment alone is not a bottom signal.</div></section>
@@ -96,8 +101,29 @@ function feedLabel(f){
  return f ? (String(f.status).replaceAll("_"," ")+" · session "+(f.latest_session||"unknown")+
      (f.freshness==="stale_or_unknown"?" (STALE)":"")) : "Not collected";
 }
+function renderWatches(watches){
+ empty("watch-list");
+ if(!watches.length){
+  add($("watch-list"),"div","empty","No timestamp-eligible recorded market watch at this cutoff. This does not mean low risk.");
+  return;
+ }
+ watches.slice(0,15).forEach(function(x){
+  var row=add($("watch-list"),"article","entry");
+  var meta=add(row,"div","meta");
+  add(meta,"span","tag "+(x.direction==="risk_up"?"risk":"good"),x.direction.replaceAll("_"," "));
+  add(meta,"span","tag","Market confirmation only");
+  add(row,"div","title",x.rule_id.replaceAll("_"," ")+" · "+x.observed_value+" "+x.unit);
+  add(row,"div","desc","Observed session: "+x.observed_session+" · Attention threshold: "+x.threshold+" "+x.unit);
+  var times=add(row,"div","detail");
+  add(times,"span","","First captured: "+x.source_first_seen_at.replace("T"," ").slice(0,16)+" UTC · Watch detected: "+x.first_detected_at.replace("T"," ").slice(0,16)+" UTC");
+  var link=add(row,"a","",x.source_title||"Inspect original data");
+  link.href=x.source_url;link.target="_blank";link.rel="noopener noreferrer";
+  add(row,"div","detail",x.limitations);
+ });
+}
 function show(d){
  var r=d.radar;
+ renderWatches(d.watch_signals||[]);
  $("posture").textContent=r.posture;$("posture").className="big "+(r.risk_families.length>1?"danger":"soft");
  $("families").textContent=r.risk_families.length;$("observations").textContent=r.eligible_observations;
  $("limitations").textContent=r.limitations+" "+r.method+". No statistical downside probability is provided.";
