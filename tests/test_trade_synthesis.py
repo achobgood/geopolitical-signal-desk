@@ -184,7 +184,7 @@ def test_trade_endpoint_requires_owner_cannot_leak_holdings(monkeypatch):
             headers = {"Authorization": "Bearer " + "test-trade-owner-" * 4}
             status = client.get("/v1/market/trade-synthesis/status", headers=headers).json()
             assert status["broker_order_execution"] == "disabled"
-            assert "positions" not in str(status)
+            assert "positions" not in status and "portfolio" not in status
             # Current fixture is historical. With real now, caller-supplied quotes are stale.
             result = client.post("/v1/market/trade-synthesis", headers=headers, json=request_dict())
             assert result.status_code == 200
