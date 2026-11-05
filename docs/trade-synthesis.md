@@ -117,3 +117,17 @@ Do not paste owner API keys into the public market dashboard. Do not transmit
 holdings or accounts to unverified third-party research services. No real
 trade is to be placed by Signal Desk without a separate explicit execution
 integration and authorization.
+
+## Owner-private audit receipts (V2)
+
+The server records each owner-requested NO_TRADE or PROPOSAL_ONLY result in the
+existing Supabase project's private schema. Only the owner key may list decisions.
+The receipt stores exact ticket proposals, evidence IDs, issue time, rule/AI mode,
+and abstention reasons, but NEVER full positions, NAV, cash, account IDs, or keys.
+A database RPC independently checks publication and actual collection time,
+rejects future-only source IDs or backdated decisions, and rejects any accidental
+portfolio fields in receipts.
+
+A full broker position snapshot remains ephemeral within the owner request.
+Private execution is still disabled; a stored recommendation is not an order,
+fill, backtest result or realized P&L.
