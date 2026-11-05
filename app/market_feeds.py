@@ -257,6 +257,12 @@ async def run_market_feed(store, run_key: str, trigger: str) -> dict:
                     error = "http_or_timeout" if isinstance(exc, (httpx.HTTPError, asyncio.TimeoutError)) else "invalid_or_unavailable_feed"
                     results.append({"provider": provider, "status": "failed", "reason": error})
                     status = "partial"
+            from app.market_sec import collect_sec_filings
+            sec = await collect_sec_filings(store)
+            results.append(sec)
+            # Not configured is explicit coverage gap, not a failure of enabled feeds.
+            if sec["status"] in ("partial", "failed"):
+                status = "partial"
     except Exception:
         results.append({"provider": "collector", "status": "failed", "reason": "total_run_bound"})
         status = "partial"
