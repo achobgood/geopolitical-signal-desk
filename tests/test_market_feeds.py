@@ -123,7 +123,10 @@ def test_market_pipeline_persists_readings_and_run_receipt(monkeypatch):
     monkeypatch.setattr(feeds, "datetime", FixedDateTime)
     store = FakeStore()
     result = asyncio.run(run_market_feed(store, "test:market:20261105", "manual"))
-    assert result["run"]["status"] == "completed"
+    assert result["run"]["status"] == "partial"
+    assert {p["status"] for p in result["run"]["provider_results"] if p["provider"] != "sec_edgar"} == {"stale"}
+    assert any(p["provider"] == "sec_edgar" and p["status"] == "not_configured"
+               for p in result["run"]["provider_results"])
     assert len(store.data) == 7
     assert len(store.patches) == 1
     assert store.patches[0][0] == "market_feed_runs"
@@ -150,3 +153,15 @@ def test_scheduler_is_isolated_from_general_api_and_public_route(monkeypatch):
             assert not store.calls
     finally:
         app.dependency_overrides.clear()
+
+
+def test_completeness_requires_latest_expected_session_not_older_business_day():
+    from app.market import expected_completed_market_session
+    assert expected_completed_market_session(datetime(
+        2026, 11, 5, 22, 40, tzinfo=timezone.utc)).isoformat() == "2026-11-05"
+    # Before the close, the previous session is the latest expected complete daily bar.
+    assert expected_completed_market_session(datetime(
+        2026, 11, 5, 16, 0, tzinfo=timezone.utc)).isoformat() == "2026-11-04"
+    # Weekends roll back to Friday.
+    assert expected_completed_market_session(datetime(
+        2026, 11, 7, 23, 0, tzinfo=timezone.utc)).isoformat() == "2026-11-06"
