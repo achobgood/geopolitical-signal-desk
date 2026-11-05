@@ -232,6 +232,7 @@ async def run_market_feed(store, run_key: str, trigger: str) -> dict:
                     readings = treasury_parse(blob, source_url=url, today=today) if provider == "us_treasury" else cboe_parse(
                         blob, provider=provider, source_url=url, today=today
                     )
+                    close_observation_id = None
                     for reading in readings:
                         # The source snapshot is captured only at ingestion time.
                         # A later backfill cannot pretend the record was known earlier.
@@ -250,13 +251,65 @@ async def run_market_feed(store, run_key: str, trigger: str) -> dict:
                         })
                         count += 1
                         added += int(result.get("created", False))
+                        if reading.metric in ("vix_daily_close", "vxn_daily_close"):
+                            close_observation_id = result["observation"]["id"]
                     session = max(r.session for r in readings)
+                    quant = {"status": "not_applicable"}
+                    if provider in CBOE_URLS:
+                        try:
+                            from app.market_technicals import (
+                                METHOD, analyze_bars, parse_cboe_history
+                            )
+                            if close_observation_id is None:
+                                raise ValueError("Missing official closing observation")
+                            captured_at = datetime.now(timezone.utc)
+                            bars = parse_cboe_history(blob, cutoff_session=session)
+                            symbol = "VIX" if provider == "cboe_vix" else "VXN"
+                            analysis = analyze_bars(
+                                bars, captured_at=captured_at, symbol=symbol,
+                                instrument_kind="volatility_index"
+                            )
+                            if analysis["last_completed_session"] != session.isoformat():
+                                raise ValueError("Official source session/quant analysis mismatch")
+                            key = hashlib.sha256(json.dumps({
+                                "version": METHOD, "provider": provider,
+                                "session": session.isoformat(),
+                                "source_observation_id": close_observation_id,
+                                "bars_sha256": analysis["bars_sha256"],
+                            }, sort_keys=True).encode()).hexdigest()
+                            receipt = await store.rpc("market_record_technical_v1", {
+                                "p_key": key,
+                                "payload": {
+                                    "provider": provider, "symbol": symbol,
+                                    "instrument_kind": "volatility_index",
+                                    "source_observation_id": close_observation_id,
+                                    "source_url": url,
+                                    "observed_session": session.isoformat(),
+                                    "captured_at": captured_at.isoformat(),
+                                    "method_version": METHOD,
+                                    "bar_count": len(bars),
+                                    "bars_sha256": analysis["bars_sha256"],
+                                    "analysis": {k: v for k, v in analysis.items() if k != "input_bars"},
+                                    "input_bars": analysis["input_bars"],
+                                }
+                            })
+                            quant = {"status": "completed",
+                                     "snapshot_id": receipt["snapshot_id"],
+                                     "source_observation_id": close_observation_id,
+                                     "daily_sessions": len(bars),
+                                     "price_coverage": analysis["price_coverage"],
+                                     "trade_approved": False}
+                        except Exception:
+                            quant = {"status": "unavailable",
+                                     "reason": "incomplete_ohlc_history_or_quant_persistence_failed"}
+                            status = "partial"
                     stale = session < expected_completed_market_session(datetime.now(timezone.utc))
                     source_status = "stale" if stale else "completed"
                     results.append({"provider": provider, "status": source_status,
                                     "readings": count, "new_records": added,
                                     "latest_session": session.isoformat(),
-                                    "validation": "expected_latest_completed_us_session_weekday_only"})
+                                    "validation": "expected_latest_completed_us_session_weekday_only",
+                                    "quantitative_analysis": quant})
                     if stale:
                         status = "partial"
                 except Exception as exc:
