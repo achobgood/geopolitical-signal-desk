@@ -1,0 +1,21 @@
+name: Live Official Cboe Quantitative Acceptance
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-source-quant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install pinned runtime and test packages
+        run: python -m pip install -r requirements-test.txt
+      - name: Fetch genuine Cboe VIX/VXN OHLC and compute real deterministic levels
+        run: PYTHONPATH=. python scripts/verify_live_cboe_technicals.py
