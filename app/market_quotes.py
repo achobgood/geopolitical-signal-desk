@@ -177,3 +177,82 @@ async def vendor_snapshot(ticker: str) -> dict:
     except (httpx.HTTPError, asyncio.TimeoutError, KeyError, TypeError, ValueError):
         return {"ticker": ticker, "status": "unavailable", "feed": feed,
                 "execution_enabled": False, "reason": "Vendor response/entitlement missing or invalid; no fabricated quote"}
+
+
+async def vendor_technical_research(ticker: str) -> dict:
+    """Optional authorized daily-OHLC technical analysis. Never a broker order.
+
+    A real vendor response is mandatory. It remains non-orderable without
+    an authenticated portfolio, earnings, liquidity and macro risk gate.
+    """
+    if not SYMBOL.fullmatch(ticker):
+        raise ValueError("Invalid ticker")
+    cfg = configuration()
+    if not cfg["configured"]:
+        return {"symbol": ticker, "status": "NOT_CONFIGURED",
+                "execution_enabled": False, "feed": cfg["feed"],
+                "blockers": ["Owner has not provided licensed market-data credentials"]}
+    now = datetime.now(timezone.utc)
+    try:
+        from app.market import expected_completed_market_session
+        from app.market_technicals import Bar, analyze_bars, _number
+        expected = expected_completed_market_session(now)
+        payload = await api_json(f"/v2/stocks/{ticker}/bars", {
+            "feed": cfg["feed"],
+            "timeframe": "1Day",
+            "limit": 320,
+            "sort": "asc",
+            "adjustment": "split",
+            "start": (now - timedelta(days=315)).date().isoformat(),
+            "end": now.date().isoformat(),
+        })
+        if payload.get("next_page_token"):
+            return {"symbol":ticker, "status":"UNAVAILABLE",
+                    "execution_enabled":False,
+                    "reason":"Vendor returned an incomplete paginated history"}
+        series = payload.get("bars")
+        if not isinstance(series, list):
+            raise ValueError("Missing vendor daily bars")
+        by_date = {}
+        for row in series:
+            session = timestamp(row["t"]).astimezone(NY).date()
+            if session > expected:
+                continue
+            bar = Bar(session=session, open=_number(row["o"]),
+                      high=_number(row["h"]), low=_number(row["l"]),
+                      close=_number(row["c"]))
+            if session in by_date and by_date[session] != bar:
+                raise ValueError("Conflicting daily bar for one session")
+            by_date[session] = bar
+        ordered = [by_date[d] for d in sorted(by_date)]
+        analysis = analyze_bars(
+            ordered[-320:], captured_at=now, symbol=ticker, instrument_kind="stock"
+        )
+        analysis.pop("input_bars", None)
+        last_day = ordered[-1].session
+        fresh = last_day >= expected
+        return {
+            "symbol": ticker,
+            "status": "RESEARCH_ONLY" if fresh else "STALE",
+            "analysis": analysis,
+            "source_url": f"{HOST}/v2/stocks/{ticker}/bars",
+            "vendor": "Alpaca Market Data",
+            "feed": cfg["feed"],
+            "consolidated": cfg["consolidated"],
+            "last_vendor_session": last_day.isoformat(),
+            "expected_completed_session": expected.isoformat(),
+            "first_checked_at": now.isoformat(),
+            "execution_enabled": False,
+            "blockers": [
+                "No automatic brokerage order execution",
+                "Earnings calendar and private portfolio not verified",
+                "Issuer CDS and broad market breadth not connected",
+                *([] if cfg["consolidated"] else
+                  ["IEX is a single exchange, not a consolidated U.S. tape"]),
+                *([] if fresh else ["Latest completed daily source session is stale"]),
+            ],
+        }
+    except (httpx.HTTPError, asyncio.TimeoutError, KeyError, ValueError, TypeError, IndexError):
+        return {"symbol":ticker, "status":"UNAVAILABLE",
+                "execution_enabled":False,
+                "reason":"Market-data vendor unreachable, insufficient bars, or invalid data; no fabricated levels"}

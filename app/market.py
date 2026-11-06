@@ -213,6 +213,8 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     feed_runs = await store.rows("market_feed_runs", limit=12)
     amendments = await store.rows("market_source_amendments", limit=100)
     watch_records = await store.rows("market_watch_signals", limit=80)
+    technical_records = await store.rows("market_technical_snapshots", limit=20)
+    forward_records = await store.rows("market_technical_outcomes", limit=40)
     # Apply only corrections/retractions actually recorded by the historical cutoff.
     # Original records remain immutable in the database for forensic inspection.
     corrections = {}
@@ -306,6 +308,56 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
             })
         except (ValueError, TypeError, KeyError):
             continue
+    # A calculation's creation time is its actual first availability; no lookahead
+    # in historical replay. The persisted raw bars never leave the server.
+    technical_readouts = []
+    for record in technical_records:
+        try:
+            if (parse_time(record["calculated_at"]) > as_of
+                    or parse_time(record["captured_at"]) > as_of):
+                continue
+            source = visible_source_ids.get(record["source_observation_id"])
+            if not source:
+                continue
+            overview = dict(record["analysis"])
+            overview.pop("input_bars", None)
+            technical_readouts.append({
+                "id": record["id"], "symbol": record["symbol"],
+                "instrument_kind": "volatility_index",
+                "method_version": record["method_version"],
+                "source_url": source["source_url"],
+                "source_observation_id": source["id"],
+                "source_first_collected_at": source["collected_at"],
+                "calculated_at": record["calculated_at"],
+                "last_completed_session": record["observed_session"],
+                "analysis": overview,
+                "not_a_trade_recommendation": True,
+            })
+        except (KeyError, ValueError, TypeError):
+            continue
+    unique_technical = {}
+    for item in technical_readouts:
+        unique_technical.setdefault(item["symbol"],item)
+    forward_outcomes = []
+    for result in forward_records:
+        try:
+            if parse_time(result["first_evaluated_at"]) > as_of:
+                continue
+            forward_outcomes.append({
+                "id": result["id"],
+                "symbol": result["symbol"],
+                "baseline_session": result["baseline_session"],
+                "target_session": result["target_session"],
+                "horizon_sessions": result["horizon_sessions"],
+                "baseline_close": result["baseline_close"],
+                "target_close": result["target_close"],
+                "observed_index_change_pct": result["observed_index_change_pct"],
+                "first_evaluated_at": result["first_evaluated_at"],
+                "label": "observed_index_movement_not_trading_return",
+                "not_a_trade_pnl": True,
+            })
+        except (KeyError,TypeError,ValueError):
+            continue
     return {
         "desk": "market", "as_of": as_of.isoformat(), "mode": mode,
         "radar": radar(effective, as_of=as_of, mode=mode),
@@ -314,6 +366,8 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
         "feed_health": feed_health,
         "scenarios": latest_scenarios,
         "watch_signals": visible_watches[:30],
+        "technical_readouts": list(unique_technical.values()),
+        "forward_observed_outcomes": forward_outcomes[:20],
         "coverage": {
             "price_feed": "not_connected",
             "credit_spread_feed": "not_connected",
@@ -395,6 +449,27 @@ def register_market_routes(app, authorize, scheduler_bearer):
         store=Depends(get_store),
     ):
         return await store.rows("market_observations", limit=limit, before=before)
+
+    @app.get("/v1/market/technical-outcomes", dependencies=[Depends(authorize)])
+    async def technical_outcome_history(
+        limit: int = Query(30, ge=1, le=50),
+        store=Depends(get_store),
+    ):
+        return await store.request("GET", "market_technical_outcomes", params={
+            "select": "id,symbol,baseline_session,target_session,horizon_sessions,baseline_close,target_close,observed_index_change_pct,first_evaluated_at,outcome_label",
+            "order": "id.desc", "limit": str(limit),
+        })
+
+    @app.get("/v1/market/technical-snapshots", dependencies=[Depends(authorize)])
+    async def technical_history(
+        limit: int = Query(25, ge=1, le=50),
+        store=Depends(get_store),
+    ):
+        # Do not return the large raw input_bars or any personal account information.
+        return await store.request("GET", "market_technical_snapshots", params={
+            "select": "id,symbol,instrument_kind,observed_session,source_url,source_observation_id,calculated_at,method_version,bar_count,bars_sha256,analysis",
+            "order": "id.desc", "limit": str(limit),
+        })
 
     @app.get("/v1/market/watch-signals", dependencies=[Depends(authorize)])
     async def market_watch_signals(
@@ -491,6 +566,16 @@ def register_market_routes(app, authorize, scheduler_bearer):
         from app.market_quotes import vendor_snapshot
         try:
             return await vendor_snapshot(ticker)
+        except ValueError:
+            raise HTTPException(422, "Invalid ticker")
+
+    @app.get("/v1/market/vendor-technical/{ticker}")
+    async def vendor_technical_route(ticker: str, actor=Depends(authorize)):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Owner authorization required for licensed stock market data")
+        from app.market_quotes import vendor_technical_research
+        try:
+            return await vendor_technical_research(ticker)
         except ValueError:
             raise HTTPException(422, "Invalid ticker")
 
