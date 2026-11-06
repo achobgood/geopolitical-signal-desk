@@ -34,11 +34,14 @@ The original geopolitical collector and its schedule are unchanged. The market r
 
 ## Still dependent on owner-approved external sources
 
-- Stock and ETF technical calculations require entitled price and volume data, exchange session/quote freshness, and a real earnings calendar. The server has a read-only Alpaca adapter but no active key/entitlement has been verified.
+- Owner-only `GET /v1/market/vendor-technical/{ticker}` can calculate the same deterministic indicators from actual licensed Alpaca daily OHLC if configured and permitted. IEX is explicitly single-venue and SIP requires real entitlement. Results remain RESEARCH_ONLY or STALE, never brokerage orders. Until configured this endpoint returns NOT_CONFIGURED and no generated levels.
+- Stock and ETF trade *tickets* additionally require a real earnings calendar, live bid/ask spreads, true account snapshot and independent macro/credit gates; a historical OHLC study alone never supplies them.
 - AI issuer credit/CDS/loan access and market-wide breadth are *not* in the official Cboe/Treasury sources. Do not substitute the VIX/VXN vol index for CDS or assume market direction from a vol spike.
 - SEC filing metadata requires a real SEC contact identity in server environment. A valid integration does not itself interpret 10-Q/8-K financial statements.
 - Brokerage-linked current holdings and tax lots require owner opt-in and a private session. Public Market Intelligence should never expose them.
-- Outcome and strategy comparisons must use strictly forward-observed facts with at least the stated horizon, include missing windows, and distinguish volatility-index changes from tradable P&L.
+- A first forward observation mechanism is now implemented in `db/market_forward_outcomes_v3.sql`. Each completed later Cboe technical snapshot can evaluate a **previously saved** snapshot against the *next five genuinely observed, completed sessions*, with the future series preserved in the database. The SQL validates a matching earlier closing bar, an independent later source capture, and a five-session horizon; revised/missing evidence returns INCOMPARABLE or PENDING rather than a return. It records the **change in the volatility index**, never a stock return, simulated trade or predictive accuracy.
+- Until five subsequent sessions have actually passed after an original snapshot, there must be **zero** measured outcomes. This is the expected truthful state, not a feature failure.
+- Any future strategy comparison needs actual stock/ETF price and transaction cost data, as well as full false positives, misses, baselines and forward denominator. The current VIX/VXN measurements do not establish that capability.
 - The current toolset cannot directly modify the separate ChatGPT Site. The Render `/market` interface remains a transparent transitional research client until owner-authorized Site integration is tested.
 
 ## Competitive validation
