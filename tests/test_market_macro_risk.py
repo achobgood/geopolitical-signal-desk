@@ -49,3 +49,29 @@ def test_missing_data_and_lagged_macro_do_not_create_risk_on_or_invent_events():
  r=build_brief({'observations':[]},[],[],as_of=NOW)
  assert r['market_regime']=='INSUFFICIENTLY_OBSERVED' and r['geopolitical_watch']==[]
  assert r['probability']is None
+
+def test_provider_refusal_preserves_only_reviewed_status_without_response_message():
+ from app.market_macro import OfficialSourceDeclined,failure_diagnostic
+ d=bls();d['payroll']={'status':'REQUEST_NOT_PROCESSED','message':['sensitive untrusted response text']}
+ with pytest.raises(OfficialSourceDeclined)as rejected:parse_bls(d,captured_at=NOW)
+ assert failure_diagnostic(rejected.value)=={'category':'PROVIDER_DECLINED','provider_status':'REQUEST_NOT_PROCESSED'}
+ assert failure_diagnostic(OfficialSourceDeclined('arbitrary secret'))['provider_status']=='UNKNOWN_STATUS'
+
+def test_failed_source_is_recorded_and_diagnosed_without_logging_body_or_credentials(monkeypatch,caplog):
+ import httpx
+ from app import market_macro as macro
+ class Store:
+  def __init__(self):self.calls=[]
+  async def rpc(self,name,args):
+   self.calls.append((name,args))
+   return {'claimed':True,'check_id':71}if name=='market_macro_claim_v1'and args['p_provider']=='bls_employment'else {'claimed':False}
+ async def unavailable(provider):
+  request=httpx.Request('GET','https://api.bls.gov/?secret=do-not-log',headers={'Authorization':'Bearer do-not-log'})
+  response=httpx.Response(403,request=request,text='untrusted do-not-log body')
+  response.raise_for_status()
+ monkeypatch.setattr(macro,'fetch_macro',unavailable);store=Store()
+ with caplog.at_level('WARNING'):result=asyncio.run(macro.refresh_macro(store))
+ assert result[0]['status']=='UNAVAILABLE'and result[0]['diagnostic']=={'category':'UPSTREAM_HTTP','http_status':403}
+ assert ('market_macro_failure_v1',{'p_check_id':71})in store.calls
+ assert 'macro_source_unavailable'in caplog.text and '403'in caplog.text and 'do-not-log'not in caplog.text
+ assert 'CAPTURED'not in str(result)
