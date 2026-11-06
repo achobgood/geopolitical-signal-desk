@@ -19,6 +19,15 @@ jobs:
           curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/market" -o /tmp/market.html
           curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z" -o /tmp/replay.json
           curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=live" -o /tmp/live.json
+          # Render's free instance may still be replacing the old revision.
+          # Wait for the actual new API payload, not just HTTP 200 from old code.
+          for _attempt in $(seq 1 18); do
+            if python -c 'import json; d=json.load(open("/tmp/live.json")); assert len(d.get("retrospective_volatility_studies", [])) >= 2'; then
+              break
+            fi
+            sleep 10
+            curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=live" -o /tmp/live.json
+          done
           python - <<'PY'
           from pathlib import Path
           import json
@@ -30,6 +39,18 @@ jobs:
           assert replay.get("desk") == live.get("desk") == "market"
           assert replay.get("mode") == "replay" and live.get("mode") == "live"
           assert replay["radar"]["actual_earlier_alert"] is False
+          assert replay.get("retrospective_volatility_studies") == [], "No later study in historical Nov 3 replay"
+          studies = live.get("retrospective_volatility_studies", [])
+          assert {x["symbol"] for x in studies} >= {"VIX", "VXN"}, "Real official Cboe history study missing"
+          for study in studies:
+              assert study["status"] == "RETROSPECTIVE_DESCRIPTIVE_ONLY"
+              assert study["observed_daily_sessions"] >= 100
+              assert study["no_stock_or_portfolio_return"] is True
+              assert study["signal_was_recorded_at_past_dates"] is False
+              assert study["source_first_analyzed_at"] >= study["source_first_collected_at"]
+              assert study["horizons"]["5"]["all_eligible_windows"] >= 90
+              assert study["horizons"]["5"]["not_a_winning_trade_rate"] is True
+              assert study["source_url"].startswith("https://cdn-api.cboe.com/")
           assert replay.get("watch_signals") == [], "No retrospective pre-crash watch should be invented"
           watches = live.get("watch_signals", [])
           assert watches, "Live database must expose a persisted, sourced watch"
@@ -58,3 +79,5 @@ jobs:
           test "$PRIVATE_STATUS" = "401"
           WATCH_STATUS=$(curl -sS -o /tmp/watch-unauthorized.json -w '%{http_code}' --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/watch-signals")
           test "$WATCH_STATUS" = "401"
+          FUNDAMENTALS_PUBLIC=$(curl -sS -o /tmp/issuer-unauthorized.json -w '%{http_code}' --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/company-fundamentals/NVDA")
+          test "$FUNDAMENTALS_PUBLIC" = "401"

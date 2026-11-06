@@ -333,6 +333,32 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     unique_technical = {}
     for item in technical_readouts:
         unique_technical.setdefault(item["symbol"],item)
+    # Study prior Cboe history using the ACTUALLY captured source OHLC.
+    # These are retrospective sample distributions, not pre-recorded alerts.
+    historical_studies = []
+    studied_symbols = set()
+    from app.market_volatility_study import study_cboe_history
+    for record in technical_records:
+        try:
+            symbol = record["symbol"]
+            if symbol in studied_symbols or symbol not in ("VIX", "VXN"):
+                continue
+            if (parse_time(record["calculated_at"]) > as_of
+                    or parse_time(record["captured_at"]) > as_of
+                    or record["source_observation_id"] not in visible_source_ids):
+                continue
+            study = study_cboe_history(
+                record["input_bars"], symbol=symbol,
+                collected_at=parse_time(record["calculated_at"]),
+            )
+            study["source_observation_id"] = record["source_observation_id"]
+            study["source_url"] = visible_source_ids[record["source_observation_id"]]["source_url"]
+            study["source_first_collected_at"] = visible_source_ids[record["source_observation_id"]]["collected_at"]
+            historical_studies.append(study)
+            studied_symbols.add(symbol)
+        except (KeyError, TypeError, ValueError):
+            continue
+
     forward_outcomes = []
     for result in forward_records:
         try:
@@ -362,6 +388,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
         "scenarios": latest_scenarios,
         "watch_signals": visible_watches[:30],
         "technical_readouts": list(unique_technical.values()),
+        "retrospective_volatility_studies": historical_studies,
         "forward_observed_outcomes": forward_outcomes[:20],
         "coverage": {
             "price_feed": "not_connected",
@@ -536,6 +563,62 @@ def register_market_routes(app, authorize, scheduler_bearer):
             raise HTTPException(401, "Invalid scheduler credential")
         return await run_market_feed(store, value.run_key, "supabase_cron")
 
+
+    @app.get("/v1/market/company-fundamentals/{ticker}")
+    async def latest_company_fundamentals(
+        ticker: str, actor=Depends(authorize), store=Depends(get_store)
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "SEC issuer financial snapshots require owner authentication")
+        from app.market_sec import SEC_TICKERS
+        if ticker not in SEC_TICKERS:
+            raise HTTPException(422, "Ticker outside the verified SEC issuer universe")
+        rows = await store.request("GET","market_fundamental_snapshots",params={
+            "select": "id,ticker,cik,issuer_name,method_version,source_url,source_document_sha256,source_first_collected_at,created_at,accession,report_start,report_end,filed_date,metrics,missing,status",
+            "ticker":f"eq.{ticker}", "order":"id.desc", "limit":"1"
+        })
+        if not rows:
+            return {
+                "ticker":ticker,"status":"NOT_COLLECTED",
+                "reason":"No official companyfacts source has been recorded for this issuer",
+                "execution_enabled":False
+            }
+        return {**rows[0], "execution_enabled":False,
+                "not_an_issuer_cds_or_stock_forecast":True}
+
+    @app.post("/v1/market/company-fundamentals/{ticker}/refresh")
+    async def refresh_company_fundamentals(
+        ticker: str, actor=Depends(authorize), store=Depends(get_store)
+    ):
+        if actor != "api:shared-key":
+            raise HTTPException(403, "Only owner can request SEC financial collection")
+        from app.market_companyfacts import fetch_company_fundamentals
+        from app.market_sec import SEC_TICKERS
+        import hashlib, json, httpx, asyncio
+        if ticker not in SEC_TICKERS:
+            raise HTTPException(422,"Ticker outside the verified SEC issuer universe")
+        try:
+            result = await fetch_company_fundamentals(ticker)
+        except (ValueError, KeyError, TypeError, httpx.HTTPError, asyncio.TimeoutError):
+            raise HTTPException(502, "Official SEC companyfacts unavailable or invalid; no numbers inferred")
+        if result.get("status") not in ("ANALYZED","ANALYZED_WITH_GAPS"):
+            return result
+        identity = {
+            "ticker":result["ticker"],"cik":result["cik"],
+            "source_document_sha256":result["source_document_sha256"],
+            "annual_filing":result["annual_filing"],
+            "metrics":result["metrics"], "missing":result["missing"],
+            "method_version":result["method_version"],
+        }
+        key = hashlib.sha256(json.dumps(
+            identity,sort_keys=True,separators=(",",":"),ensure_ascii=False
+        ).encode()).hexdigest()
+        recorded = await store.rpc("market_record_fundamentals_v1", {
+            "payload":result,"p_key":key
+        })
+        if not recorded.get("snapshot_id") or recorded.get("orders_placed") is not False:
+            raise HTTPException(502,"Source-linked SEC snapshot not committed")
+        return {**result,"storage":recorded,"execution_enabled":False}
 
     @app.get("/v1/market/data-sources/status", dependencies=[Depends(authorize)])
     async def market_data_source_status():
