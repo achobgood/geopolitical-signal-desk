@@ -83,6 +83,11 @@ footer{margin-top:27px;border-top:1px solid var(--edge);padding-top:18px;color:v
   <div class="callout">These outcomes measure changes in the VIX/VXN *volatility index* after an earlier, time-stamped quantitative analysis. They are not investment returns, trade wins, or an estimate of predictive accuracy. No outcome can exist until a later official source series is collected.</div>
 </section>
 <section class="panel" style="margin-bottom:18px">
+  <div class="panel-heading"><h2>Historical volatility event study</h2><small>REAL CBOE DAILY BARS · RETROSPECTIVE, NOT HISTORICAL ALERTS</small></div>
+  <div id="historical-volatility-studies" class="grid" aria-live="polite"></div>
+  <div class="callout">The 20% five-session volatility threshold is an uncalibrated attention rule. All sample windows are reconstructed from a dataset collected later. Event windows overlap and are not statistically independent. These are future changes in VIX/VXN index values, NOT stock returns, trade win rates, or pre-crash predictions.</div>
+</section>
+<section class="panel" style="margin-bottom:18px">
   <div class="panel-heading"><h2>Persisted market watches</h2><small>ACTUAL DETECTION · NOT RETROSPECTIVE PREDICTIONS</small></div>
   <div id="watch-list" aria-live="polite"></div>
   <div class="callout">These are simple daily-data threshold detections. They cannot identify the bottom, calculate a trade, or prove advance warning. Compare source collection and first-detected timestamps before evaluating any claim of early warning.</div>
@@ -122,6 +127,35 @@ function renderOutcomes(rows){
   var p=Number(x.observed_index_change_pct);
   var label=(Number.isFinite(p)?p.toFixed(2):"?")+"% VIX/VXN INDEX change · evaluated "+String(x.first_evaluated_at).replace("T"," ").slice(0,16)+" UTC";
   add($("outcome-list"),"b","",label);
+ });
+}
+function renderVolatilityStudies(items){
+ empty("historical-volatility-studies");
+ if(!items.length){
+  add($("historical-volatility-studies"),"div","empty","No original-source volatility study has been calculated at this cutoff. Missing data is not a favorable signal.");
+  return;
+ }
+ items.forEach(function(x){
+  var card=add($("historical-volatility-studies"),"div","scenario");
+  add(card,"b","",x.symbol+" · Historical observed index movement");
+  add(card,"div","qual","Sessions: "+x.observed_daily_sessions+" · "+x.first_session+" to "+x.last_session);
+  [5,20].forEach(function(h){
+   var d=(x.horizons||{})[String(h)];
+   if(!d){return}
+   add(card,"div","",h+" completed sessions: "+
+     d.completed_triggered_windows+" threshold-triggered windows with known outcomes, "+
+     d.right_censored_triggered_windows+" pending windows, "+
+     d.all_eligible_windows+" unconditional comparison windows");
+   add(card,"div","qual",
+     "Historical median subsequent VIX/VXN change after signal: "+
+     (d.conditional_median_index_change_pct===null?"insufficient":d.conditional_median_index_change_pct+"%")+
+     " · All-window median: "+
+     (d.unconditional_median_index_change_pct===null?"insufficient":d.unconditional_median_index_change_pct+"%"));
+  });
+  var link=add(card,"a","","Inspect original Cboe daily prices");
+  link.href=x.source_url;link.target="_blank";link.rel="noopener noreferrer";
+  add(card,"div","detail","Source first collected: "+String(x.source_first_collected_at).replace("T"," ").slice(0,16)+" UTC · First calculated: "+String(x.source_first_analyzed_at).replace("T"," ").slice(0,16)+" UTC");
+  add(card,"div","detail","Retrospective only · overlapping events · no predicted stock performance");
  });
 }
 function renderTechnicals(items){
@@ -172,6 +206,7 @@ function show(d){
  var r=d.radar;
  renderWatches(d.watch_signals||[]);
  renderTechnicals(d.technical_readouts||[]);
+ renderVolatilityStudies(d.retrospective_volatility_studies||[]);
  renderOutcomes(d.forward_observed_outcomes||[]);
  $("posture").textContent=r.posture;$("posture").className="big "+(r.risk_families.length>1?"danger":"soft");
  $("families").textContent=r.risk_families.length;$("observations").textContent=r.eligible_observations;
