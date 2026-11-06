@@ -84,6 +84,7 @@ def study_cboe_history(rows: list[dict], *, symbol: str,
             continue
         baseline = []
         events = []
+        event_changes = []
         pending_event_windows = 0
         trigger_count = 0
         for i in range(5,len(parsed)):
@@ -98,6 +99,7 @@ def study_cboe_history(rows: list[dict], *, symbol: str,
             future = _change(parsed[i][1],parsed[i+horizon][1])
             baseline.append(future)
             if hit:
+                event_changes.append(future)
                 events.append({
                     "session":parsed[i][0].isoformat(),
                     "five_session_volatility_change_pct":_p(five_day),
@@ -105,7 +107,7 @@ def study_cboe_history(rows: list[dict], *, symbol: str,
                     "subsequent_index_change_pct":_p(future),
                 })
         med_base = _median(baseline)
-        med_cond = _median([Decimal(e["subsequent_index_change_pct"]) for e in events])
+        med_cond = _median(event_changes)
         result["horizons"][str(horizon)] = {
             "status":"DESCRIPTIVE_SAMPLES_ONLY" if len(events)>=3 else "INSUFFICIENT_TRIGGERED_SAMPLES",
             "horizon_completed_sessions":horizon,
