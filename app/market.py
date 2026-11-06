@@ -141,14 +141,9 @@ def parse_time(value: str) -> datetime:
 
 
 def expected_completed_market_session(as_of: datetime):
-    """Conservative weekday-only US close check; holidays may be falsely stale."""
-    ny = as_of.astimezone(ZoneInfo("America/New_York"))
-    day = ny.date()
-    if ny.weekday() < 5 and (ny.hour, ny.minute) < (16, 15):
-        day -= timedelta(days=1)
-    while day.weekday() >= 5:
-        day -= timedelta(days=1)
-    return day
+    """Conservative U.S. equities session, aware of regular NYSE holidays."""
+    from app.market_calendar import expected_completed_session
+    return expected_completed_session(as_of)
 
 
 def eligible(row: dict, cutoff: datetime, mode: str) -> bool:
@@ -570,12 +565,16 @@ def register_market_routes(app, authorize, scheduler_bearer):
             raise HTTPException(422, "Invalid ticker")
 
     @app.get("/v1/market/vendor-technical/{ticker}")
-    async def vendor_technical_route(ticker: str, actor=Depends(authorize)):
+    async def vendor_technical_route(
+        ticker: str,
+        adjustment: Literal["split","all"] = "split",
+        actor=Depends(authorize),
+    ):
         if actor != "api:shared-key":
             raise HTTPException(403, "Owner authorization required for licensed stock market data")
         from app.market_quotes import vendor_technical_research
         try:
-            return await vendor_technical_research(ticker)
+            return await vendor_technical_research(ticker, adjustment=adjustment)
         except ValueError:
             raise HTTPException(422, "Invalid ticker")
 
