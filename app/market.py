@@ -14,7 +14,7 @@ from typing import Literal
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from pydantic import Field, field_validator, model_validator
 
 from app.models import StrictModel, public_url, PipelineIn
@@ -404,13 +404,12 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
 
 
 def register_market_routes(app, authorize, scheduler_bearer):
-    """Mount independent market API and its read-only, public-source dashboard."""
+    """Mount the authoritative market API and redirect its legacy UI to the unified Site."""
     from app.main import fingerprint
-    from pathlib import Path
 
     @app.get("/market", include_in_schema=False)
     async def market_home():
-        return FileResponse(Path(__file__).with_name("market_dashboard.html"), media_type="text/html")
+        return RedirectResponse("https://geopolitical-signal-command.boldbaron8.chatgpt.site/#markets", status_code=307)
 
     @app.get("/v1/market/public-snapshot", include_in_schema=False)
     async def market_public_snapshot(
