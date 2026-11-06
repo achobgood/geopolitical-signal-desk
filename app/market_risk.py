@@ -6,6 +6,7 @@ import hashlib,json
 from pathlib import Path
 from app.market import snapshot,parse_time,expected_completed_market_session
 from app.market_calendar import NY
+from app.market_catalysts import CALENDAR_PROVIDERS,catalyst_calendar
 
 METHOD='source-bound-market-risk-v1'
 
@@ -39,7 +40,7 @@ def _signal(metric, *, interpretation,quality='MEASURED'):
       'reference_session':str(metric.get('event_at') or '')[:10] or None,'interpretation':interpretation}
 
 
-def build_brief(market,macro_captures,geopolitical, *, as_of):
+def build_brief(market,macro_captures,geopolitical, *, as_of,monitoring_checks=()):
     metrics=_latest_metrics(market);expected=str(expected_completed_market_session(as_of));evidence=[];bull=[];bear=[];gaps=[]
     vol={};current=True
     for symbol in ('vix','vxn'):
@@ -73,8 +74,11 @@ def build_brief(market,macro_captures,geopolitical, *, as_of):
     for code in ('us_treasury_2y_yield_pct','us_treasury_10y_yield_pct'):
         if code in metrics:evidence.append(_signal(metrics[code],interpretation='Dated government par yield; a level alone cannot establish issuer financing access or monetary liquidity.'))
         else:gaps.append(code+': not collected')
+    catalysts=catalyst_calendar(macro_captures,as_of=as_of,checks=monitoring_checks)
+    gaps.extend(catalysts['warnings'])
     macros=[]
     for record in macro_captures:
+        if record['provider']in CALENDAR_PROVIDERS:continue
         p=record['payload'];provider=record['provider'];data=p.get('data',{});item={k:v for k,v in p.items() if k not in ('history','raw_gzip_base64')};item['capture_id']=record['id'];macros.append(item)
         if provider=='bls_employment':
             gain=Decimal(str(data['payroll_change_jobs']));year,month=map(int,p['reference_period'].split('-'));month_age=(as_of.year-year)*12+as_of.month-month
@@ -114,7 +118,9 @@ def build_brief(market,macro_captures,geopolitical, *, as_of):
     window='MORNING' if 7<=as_of.astimezone(NY).hour<12 else 'SESSION' if 12<=as_of.astimezone(NY).hour<17 else 'POST_CLOSE' if as_of.astimezone(NY).hour>=17 else 'OVERNIGHT'
     code_hash=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     source_signature=fingerprint({'method':METHOD,'code_hash':code_hash,'brief_window':window,'observations':[(x['id'],x.get('source_reviewed_at')) for x in market.get('observations',[])],
-       'macro_captures':[x['id'] for x in macro_captures],'geopolitical_assessments':[x['assessment_id'] for x in geopolitical],
+       'macro_captures':[x['id'] for x in macro_captures],
+       'calendar_method_sha256':catalysts['method_sha256'],'upcoming_event_ids':[x['event_id']for x in catalysts['events']],
+       'calendar_source_freshness':[(x['provider'],x['freshness'])for x in catalysts['sources']],'geopolitical_assessments':[x['assessment_id'] for x in geopolitical],
        'reference_session':expected,'freshness_gaps':sorted(gaps)})
     return {'report_type':'MARKET_RISK_INTELLIGENCE_NOT_FORECAST','method_version':METHOD,'method_code_hash':code_hash,'source_signature':source_signature,
       'as_of':as_of.isoformat(),'brief_window':window,'reference_equity_session':expected,'market_regime':regime,'trajectory':trajectory,'headline':headline,
@@ -126,7 +132,7 @@ def build_brief(market,macro_captures,geopolitical, *, as_of):
        'Volatility eases while primary market breadth and financing access stabilize.','Credible contractual/counterparty evidence resolves an unverified financing allegation.'],
        'deterioration':['New broad-market lows coincide with further volatility stress.','Documented financing failures or project cancellations expand across counterparties.',
        'Confirmed energy/shipping disruption changes inflation and financing conditions.']},
-      'upcoming_events_status':'Calendar coverage is incomplete; official release times and results must be checked separately.',
+      'catalyst_calendar':catalysts,'upcoming_events_status':catalysts['coverage'],
       'missing_inputs':gaps,'probability':None,'predictive_edge_established':False,'execution_enabled':False,
       'publication_warning':'Some daily source publication clocks are unknown; stored collection/usable timestamps are conservative availability, not claimed earlier publication.',
       'portfolio_boundary':'General public-source research only. Actual portfolio amounts and personalized analysis require separately authorized owner-private input.'}
@@ -157,13 +163,17 @@ async def generate_risk_brief(store, *, refresh_sources=True,force=False):
         source_results=await refresh_macro(store,force=force)
     now=datetime.now(timezone.utc)
     market=await snapshot(store,as_of=now,mode='live')
-    captures=await store.rows('market_macro_captures',limit=15,filters={'select':'id,provider,captured_at,payload'})
-    seen=set();latest=[]
-    for c in captures:
-        if c['provider'] not in seen:latest.append(c);seen.add(c['provider'])
+    from app.market_macro import PROVIDERS
+    latest=[]
+    for provider in PROVIDERS:
+        # A slow-changing monthly/calendar source must not be displaced by
+        # another provider's more frequent captures in a shared recent-row limit.
+        rows=await store.rows('market_macro_captures',limit=2 if provider in CALENDAR_PROVIDERS else 1,
+          filters={'select':'id,provider,captured_at,payload,document_sha256','provider':'eq.'+provider})
+        latest.extend(rows)
     geo=await _geopolitical_market_context(store,now)
-    report=build_brief(market,latest,geo,as_of=datetime.now(timezone.utc))
     health=await store.rpc('market_macro_health_v1',{})
+    report=build_brief(market,latest,geo,as_of=datetime.now(timezone.utc),monitoring_checks=health)
     report['monitoring_checks']=health
     failed=[x['provider'] for x in health if x['status']=='UNAVAILABLE']
     report['missing_inputs'] += [x+': latest retrieval failed; any retained values remain explicitly dated' for x in failed]

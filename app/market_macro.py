@@ -9,12 +9,14 @@ from datetime import datetime, timezone, date
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
 import httpx
+from app.market_catalysts import CALENDAR_PROVIDERS,parse_fomc,parse_bea_calendar
 
 BLS_SERIES={'payroll':'CES0000000001','unemployment':'LNS14000000','hourly_earnings':'CES0500000003'}
 BLS_BASE='https://api.bls.gov/publicAPI/v1/timeseries/data/'
 SOFR_URL='https://markets.newyorkfed.org/api/rates/secured/sofr/last/3.json'
 OFR_URL='https://www.financialresearch.gov/financial-stress-index/data/fsi.csv'
-ALLOWED={BLS_BASE+x for x in BLS_SERIES.values()}|{SOFR_URL,OFR_URL}
+ALLOWED={BLS_BASE,SOFR_URL,OFR_URL}|set(CALENDAR_PROVIDERS.values())
+PROVIDERS=('bls_employment','nyfed_sofr','ofr_fsi',*CALENDAR_PROVIDERS)
 NYFED_TERMS='https://www.newyorkfed.org/privacy/termsofuse'
 NYFED_NOTICE=(
  'Source: Federal Reserve Bank of New York. '
@@ -28,15 +30,17 @@ logger=logging.getLogger(__name__)
 
 class OfficialSourceDeclined(ValueError):
     """Keep a bounded provider status, never its arbitrary response message."""
-    def __init__(self,status):
+    def __init__(self,status,messages=None):
         self.provider_status=status if status in ('REQUEST_NOT_PROCESSED','REQUEST_FAILED','REQUEST_NOT_REGISTERED','REQUEST_INVALID') else 'UNKNOWN_STATUS'
+        text=' '.join(x[:500].lower()for x in (messages or [])[:8]if isinstance(x,str)) if isinstance(messages,list)else''
+        self.reason_code='DAILY_QUOTA'if 'daily'in text and ('threshold'in text or 'limit'in text)else 'ACCESS_POLICY'if 'blocked'in text else None
         super().__init__('Official source declined request')
 
 
 def failure_diagnostic(error):
     """Safe operational metadata only: no response body, headers, or error text."""
     if isinstance(error,httpx.HTTPStatusError):return {'category':'UPSTREAM_HTTP','http_status':error.response.status_code}
-    if isinstance(error,OfficialSourceDeclined):return {'category':'PROVIDER_DECLINED','provider_status':error.provider_status}
+    if isinstance(error,OfficialSourceDeclined):return {'category':'PROVIDER_DECLINED','provider_status':error.provider_status,**({'reason_code':error.reason_code}if error.reason_code else{})}
     if isinstance(error,(asyncio.TimeoutError,httpx.TimeoutException)):return {'category':'TIMEOUT'}
     if isinstance(error,httpx.HTTPError):return {'category':'TRANSPORT'}
     if isinstance(error,json.JSONDecodeError):return {'category':'INVALID_JSON'}
@@ -51,11 +55,13 @@ def number(v,minimum='-1e12',maximum='1e12'):
     return n
 
 
-async def official_bytes(url):
+async def official_bytes(url,*,method='GET',json_body=None):
     if url not in ALLOWED or urlsplit(url).scheme!='https':raise ValueError('Unreviewed macro source URL')
+    if method!=('POST'if url==BLS_BASE else'GET'):raise ValueError('Unreviewed official request method')
+    if url==BLS_BASE and (not isinstance(json_body,dict)or set(json_body)!={'seriesid','startyear','endyear'}or json_body['seriesid']!=list(BLS_SERIES.values())or not all(str(json_body[x]).isdigit()and len(str(json_body[x]))==4 for x in ('startyear','endyear'))or int(json_body['endyear'])-int(json_body['startyear'])!=1):raise ValueError('Unreviewed BLS series request')
     async with asyncio.timeout(24):
         async with httpx.AsyncClient(timeout=15,follow_redirects=False,trust_env=False) as c:
-            async with c.stream('GET',url,headers={'User-Agent':'SignalDeskPublicMacroResearch/1.0','Accept':'application/json,text/csv'}) as r:
+            async with c.stream(method,url,json=json_body,headers={'User-Agent':'SignalDeskPublicMacroResearch/1.0','Accept':'application/json,text/csv,text/html,text/calendar'}) as r:
                 r.raise_for_status();raw=bytearray()
                 async for part in r.aiter_bytes():
                     raw.extend(part)
@@ -67,7 +73,7 @@ def parse_bls(documents, *, captured_at):
     latest={};sources=[];raw={}
     for key,series_id in BLS_SERIES.items():
         doc=documents[key]
-        if doc.get('status')!='REQUEST_SUCCEEDED':raise OfficialSourceDeclined(doc.get('status'))
+        if doc.get('status')!='REQUEST_SUCCEEDED':raise OfficialSourceDeclined(doc.get('status'),doc.get('message'))
         series=(doc.get('Results') or {}).get('series') or []
         if len(series)!=1 or series[0].get('seriesID')!=series_id:raise ValueError('BLS series identity mismatch')
         rows=[]
@@ -91,7 +97,7 @@ def parse_bls(documents, *, captured_at):
     if len(periods)!=1:raise ValueError('BLS series reference months disagree')
     payroll,previous=latest['payroll'];earnings,prior_earnings=latest['hourly_earnings'];rate=latest['unemployment'][0]
     wage_growth=(number(earnings['value'])/number(prior_earnings['value'])-1)*100 if number(prior_earnings['value'])>0 else None
-    return {'provider':'bls_employment','source_urls':sources,'reference_period':periods.pop(),
+    return {'provider':'bls_employment','source_urls':[BLS_BASE],'series_reference_urls':sources,'requested_series_ids':list(BLS_SERIES.values()),'reference_period':periods.pop(),
      'source_as_of':payroll['reference_period'],'published_at':None,'publication_basis':'API does not provide a publication timestamp; monthly reference period is not a release time',
      'data':{'payroll_change_jobs':str((number(payroll['value'])-number(previous['value']))*1000),
       'payroll_level_thousands':payroll['value'],'previous_payroll_level_thousands':previous['value'],
@@ -152,13 +158,24 @@ def parse_ofr(blob, *, captured_at):
 async def fetch_macro(provider):
     captured=datetime.now(timezone.utc)
     if provider=='bls_employment':
-        blobs=await asyncio.gather(*(official_bytes(BLS_BASE+x) for x in BLS_SERIES.values()))
-        documents={key:json.loads(blob[0]) for key,blob in zip(BLS_SERIES,blobs)}
-        raw=json.dumps(documents,sort_keys=True,separators=(',',':')).encode();result=parse_bls(documents,captured_at=captured)
+        raw,headers=await official_bytes(BLS_BASE,method='POST',json_body={'seriesid':list(BLS_SERIES.values()),'startyear':str(captured.year-1),'endyear':str(captured.year)})
+        doc=json.loads(raw)
+        if not isinstance(doc,dict):raise ValueError('Invalid BLS batch envelope')
+        if doc.get('status')!='REQUEST_SUCCEEDED':raise OfficialSourceDeclined(doc.get('status'),doc.get('message'))
+        results=doc.get('Results')
+        if not isinstance(results,dict):raise ValueError('Invalid BLS batch results')
+        series=results.get('series')or[]
+        if not isinstance(series,list)or any(not isinstance(x,dict)for x in series):raise ValueError('Invalid BLS batch series')
+        if len(series)!=len(BLS_SERIES)or {x.get('seriesID')for x in series}!=set(BLS_SERIES.values()):raise ValueError('BLS batch series identities disagree')
+        by_id={x['seriesID']:x for x in series}
+        documents={key:{'status':doc['status'],'Results':{'series':[by_id[sid]]}}for key,sid in BLS_SERIES.items()}
+        result=parse_bls(documents,captured_at=captured)
     elif provider=='nyfed_sofr':
         raw,headers=await official_bytes(SOFR_URL);result=parse_sofr(json.loads(raw),captured_at=captured)
     elif provider=='ofr_fsi':
         raw,headers=await official_bytes(OFR_URL);result=parse_ofr(raw,captured_at=captured)
+    elif provider in CALENDAR_PROVIDERS:
+        raw,headers=await official_bytes(CALENDAR_PROVIDERS[provider]);result=(parse_fomc if provider=='fed_fomc_calendar'else parse_bea_calendar)(raw,captured_at=captured)
     else:raise ValueError('Unreviewed macro provider')
     result['captured_at']=datetime.now(timezone.utc).isoformat();result['usable_at']=result['captured_at']
     result['document_sha256']=hashlib.sha256(raw).hexdigest()
@@ -168,10 +185,10 @@ async def fetch_macro(provider):
 
 async def refresh_macro(store, *, force=False):
     results=[]
-    for provider in ('bls_employment','nyfed_sofr','ofr_fsi'):
+    for provider in PROVIDERS:
         claim=await store.rpc('market_macro_claim_v1',{'p_provider':provider,'p_force':force})
         if not claim['claimed']:
-            results.append({'provider':provider,'status':'CACHED','capture_id':claim.get('capture_id')});continue
+            results.append({'provider':provider,'status':'CACHED'if claim.get('capture_id')else'NOT_REFRESHED_NO_CAPTURE','capture_id':claim.get('capture_id')});continue
         started=time.monotonic()
         try:
             payload=await fetch_macro(provider)
