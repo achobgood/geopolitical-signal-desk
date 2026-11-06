@@ -87,7 +87,7 @@ def _facts_for_tag(us_gaap: dict, tag: str, *, instant: bool,
             "end": end.isoformat(), "filed": filed.isoformat(),
             "form": item["form"], "accn": accn,
             "fy": item.get("fy"), "fp": item.get("fp"),
-            "value": value, "unit": "USD",
+            "value": value, "unit": "USD", "frame": item.get("frame"),
         })
     return rows
 
@@ -122,6 +122,7 @@ def _public_fact(row: dict | None) -> dict | None:
         "taxonomy": "us-gaap", "tag": row["tag"],
         "start": row["start"], "end": row["end"],
         "filed": row["filed"], "accession": row["accn"],
+        "frame": row.get("frame"),
         "form": row["form"], "fiscal_year_field": row["fy"],
         "fiscal_period_field": row["fp"],
     }
