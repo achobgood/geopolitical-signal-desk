@@ -23,22 +23,39 @@ ZERO = Decimal(0)
 
 
 def configuration():
-    feed = os.getenv("ALPACA_DATA_FEED", "disabled").lower()
+    """Keep historical SIP Basic separate from entitled SIP realtime.
+
+    Legacy ALPACA_DATA_FEED is retained for older deployments. New deployments
+    should set explicit ALPACA_DATA_MODE to remove any entitlement ambiguity.
+    """
+    requested = os.getenv("ALPACA_DATA_MODE", "").strip().lower()
+    legacy = os.getenv("ALPACA_DATA_FEED", "disabled").strip().lower()
+    if not requested:
+        requested = {"sip":"entitled_sip_realtime", "iex":"iex_realtime"}.get(legacy,"disabled")
+    modes = {"basic_sip_delayed":"sip", "iex_realtime":"iex",
+             "entitled_sip_realtime":"sip"}
+    feed = modes.get(requested,"disabled")
     key = os.getenv("ALPACA_MARKET_DATA_KEY_ID")
     secret = os.getenv("ALPACA_MARKET_DATA_SECRET")
+    configured = bool(key and secret and requested in modes)
     return {
         "provider": "alpaca_data_api",
-        "configured": bool(key and secret and feed in ("sip", "iex")),
-        "feed": feed if feed in ("sip", "iex") else "disabled",
+        "configured": configured,
+        "mode": requested if requested in modes else "disabled",
+        "feed": feed,
         "scope": "read_only_data_host",
+        # A historical SIP series can be consolidated without granting
+        # subscription rights to realtime SIP latest/stream endpoints.
+        "historical_consolidated": feed == "sip",
+        "realtime_consolidated": requested == "entitled_sip_realtime",
         "consolidated": feed == "sip",
         "execution_enabled": False,
-        "coverage_note": ("IEX observes one trading venue, not consolidated US market prices"
-                          if feed == "iex" else
-                          "SIP requires correct plan/entitlement; setting this flag alone is not proof"
-                          if feed == "sip" else "No licensed feed configured"),
+        "coverage_note": {
+            "basic_sip_delayed":"Free historical SIP bars, limited to data older than 15 minutes; NO SIP realtime quotes",
+            "iex_realtime":"IEX is partial-exchange data from one trading venue, not consolidated U.S. market quotes",
+            "entitled_sip_realtime":"Realtime SIP requested; server must verify actual vendor entitlement",
+        }.get(requested, "Market data credentials and explicit access mode not configured"),
     }
-
 
 async def api_json(path: str, params: dict, *, max_bytes=1_500_000) -> dict:
     c = configuration()
@@ -46,6 +63,20 @@ async def api_json(path: str, params: dict, *, max_bytes=1_500_000) -> dict:
         raise ValueError("Licensed market data credentials or feed configuration missing")
     if not path.startswith("/v2/stocks/") or ".." in path:
         raise ValueError("Invalid market-data path")
+    if params.get("feed") != c["feed"]:
+        raise ValueError("Vendor feed conflicts with declared entitlement mode")
+    if c["mode"] == "basic_sip_delayed":
+        if not path.endswith("/bars"):
+            raise ValueError("Basic free SIP mode permits historical bars only")
+        end_text = params.get("end")
+        if not isinstance(end_text,str):
+            raise ValueError("Basic SIP historical request needs explicit nonrecent end")
+        try:
+            end_time = timestamp(end_text)
+        except (ValueError,AttributeError) as exc:
+            raise ValueError("Basic SIP request end must be timezone-aware") from exc
+        if end_time > datetime.now(timezone.utc) - timedelta(minutes=16):
+            raise ValueError("Basic SIP historical request would cross the vendor's 15-minute entitlement boundary")
     headers = {
         "APCA-API-KEY-ID": os.environ["ALPACA_MARKET_DATA_KEY_ID"],
         "APCA-API-SECRET-KEY": os.environ["ALPACA_MARKET_DATA_SECRET"],
@@ -132,6 +163,10 @@ async def vendor_snapshot(ticker: str) -> dict:
                 "execution_enabled": False, "reason": cfg["coverage_note"]}
     now = datetime.now(timezone.utc)
     feed = cfg["feed"]
+    if cfg["mode"] == "basic_sip_delayed":
+        return {"ticker":ticker, "status":"historical_only", "feed":"sip",
+                "mode":"basic_sip_delayed", "execution_enabled":False,
+                "reason":"Alpaca Basic allows older SIP history, not SIP latest quotes or executable order levels"}
     try:
         quote, trade, bars = await asyncio.gather(
             api_json(f"/v2/stocks/{ticker}/quotes/latest", {"feed": feed}),
@@ -179,80 +214,63 @@ async def vendor_snapshot(ticker: str) -> dict:
                 "execution_enabled": False, "reason": "Vendor response/entitlement missing or invalid; no fabricated quote"}
 
 
-async def vendor_technical_research(ticker: str) -> dict:
-    """Optional authorized daily-OHLC technical analysis. Never a broker order.
-
-    A real vendor response is mandatory. It remains non-orderable without
-    an authenticated portfolio, earnings, liquidity and macro risk gate.
-    """
+async def vendor_technical_research(ticker: str, adjustment: str = "split") -> dict:
+    """Owner-only real-price research; never a quote, portfolio or order ticket."""
     if not SYMBOL.fullmatch(ticker):
         raise ValueError("Invalid ticker")
     cfg = configuration()
     if not cfg["configured"]:
-        return {"symbol": ticker, "status": "NOT_CONFIGURED",
-                "execution_enabled": False, "feed": cfg["feed"],
-                "blockers": ["Owner has not provided licensed market-data credentials"]}
-    now = datetime.now(timezone.utc)
+        return {
+            "symbol":ticker,"status":"NOT_CONFIGURED","feed":cfg["feed"],
+            "mode":cfg["mode"],"execution_enabled":False,
+            "blockers":["Read-only vendor access not configured"],
+        }
+    if adjustment not in ("split","all"):
+        raise ValueError("Invalid corporate-action adjustment")
     try:
-        from app.market import expected_completed_market_session
-        from app.market_technicals import Bar, analyze_bars, _number
-        expected = expected_completed_market_session(now)
-        payload = await api_json(f"/v2/stocks/{ticker}/bars", {
-            "feed": cfg["feed"],
-            "timeframe": "1Day",
-            "limit": 320,
-            "sort": "asc",
-            "adjustment": "split",
-            "start": (now - timedelta(days=315)).date().isoformat(),
-            "end": now.date().isoformat(),
-        })
-        if payload.get("next_page_token"):
-            return {"symbol":ticker, "status":"UNAVAILABLE",
-                    "execution_enabled":False,
-                    "reason":"Vendor returned an incomplete paginated history"}
-        series = payload.get("bars")
-        if not isinstance(series, list):
-            raise ValueError("Missing vendor daily bars")
-        by_date = {}
-        for row in series:
-            session = timestamp(row["t"]).astimezone(NY).date()
-            if session > expected:
-                continue
-            bar = Bar(session=session, open=_number(row["o"]),
-                      high=_number(row["h"]), low=_number(row["l"]),
-                      close=_number(row["c"]))
-            if session in by_date and by_date[session] != bar:
-                raise ValueError("Conflicting daily bar for one session")
-            by_date[session] = bar
-        ordered = [by_date[d] for d in sorted(by_date)]
+        from app.market_alpaca_history import fetch_historical_equity
+        from app.market_technicals import analyze_bars
+        history = await fetch_historical_equity(ticker, adjustment=adjustment)
+        if history.get("status") == "NOT_CONFIGURED":
+            return history
+        bars = history.pop("bars")
+        observed = datetime.fromisoformat(history["first_checked_at"])
         analysis = analyze_bars(
-            ordered[-320:], captured_at=now, symbol=ticker, instrument_kind="stock"
+            bars[-320:],captured_at=observed,symbol=ticker,instrument_kind="stock"
         )
         analysis.pop("input_bars", None)
-        last_day = ordered[-1].session
-        fresh = last_day >= expected
         return {
-            "symbol": ticker,
-            "status": "RESEARCH_ONLY" if fresh else "STALE",
-            "analysis": analysis,
-            "source_url": f"{HOST}/v2/stocks/{ticker}/bars",
-            "vendor": "Alpaca Market Data",
-            "feed": cfg["feed"],
-            "consolidated": cfg["consolidated"],
-            "last_vendor_session": last_day.isoformat(),
-            "expected_completed_session": expected.isoformat(),
-            "first_checked_at": now.isoformat(),
-            "execution_enabled": False,
-            "blockers": [
+            "symbol":ticker,
+            "status":history["status"],
+            "analysis":analysis,
+            "feed":history["feed"],
+            "mode":history["mode"],
+            "adjustment":history["adjustment"],
+            "adjustment_description":history["adjustment_description"],
+            "consolidated":history["historical_consolidated"],
+            "historical_consolidated":history["historical_consolidated"],
+            "realtime_consolidated":history["realtime_consolidated"],
+            "last_vendor_session":history["quality"]["last_session"],
+            "expected_completed_session":history["expected_completed_session"],
+            "first_checked_at":history["first_checked_at"],
+            "request_pages":history["request_pages"],
+            "quality":history["quality"],
+            "source_url":history["source_url"],
+            "execution_enabled":False,
+            "blockers":[
+                "Research-only adjusted daily OHLC, not live executable bid/ask",
+                "Live consolidated quote, broker account, tax lots and earnings calendar not verified",
+                "Issuer credit spreads and broad market breadth not connected",
+                *([] if history["historical_consolidated"] else
+                  ["IEX research is single exchange partial-exchange data, not consolidated"]),
+                *([] if history["status"]=="RESEARCH_ONLY" else
+                  ["Latest complete vendor daily session is stale"]),
                 "No automatic brokerage order execution",
-                "Earnings calendar and private portfolio not verified",
-                "Issuer CDS and broad market breadth not connected",
-                *([] if cfg["consolidated"] else
-                  ["IEX is a single exchange, not a consolidated U.S. tape"]),
-                *([] if fresh else ["Latest completed daily source session is stale"]),
             ],
         }
-    except (httpx.HTTPError, asyncio.TimeoutError, KeyError, ValueError, TypeError, IndexError):
-        return {"symbol":ticker, "status":"UNAVAILABLE",
-                "execution_enabled":False,
-                "reason":"Market-data vendor unreachable, insufficient bars, or invalid data; no fabricated levels"}
+    except (httpx.HTTPError,asyncio.TimeoutError,KeyError,ValueError,TypeError,IndexError):
+        return {
+            "symbol":ticker,"status":"UNAVAILABLE",
+            "mode":cfg["mode"],"execution_enabled":False,
+            "reason":"Market-data source unavailable or failed validation; no fabricated prices",
+        }

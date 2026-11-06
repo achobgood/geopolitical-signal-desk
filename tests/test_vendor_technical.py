@@ -31,7 +31,7 @@ def test_entitled_vendor_stock_bars_produce_actual_math_but_never_order(monkeypa
         assert params["feed"]=="iex"
         return {"bars":[{
             "t":b.session.isoformat()+"T14:00:00Z",
-            "o":str(b.open),"h":str(b.high),"l":str(b.low),"c":str(b.close),
+            "o":str(b.open),"h":str(b.high),"l":str(b.low),"c":str(b.close),"v":"1000000",
         } for b in candles()]}
     monkeypatch.setattr(module,"api_json",get_bars)
     result=asyncio.run(vendor_technical_research("MSFT"))
