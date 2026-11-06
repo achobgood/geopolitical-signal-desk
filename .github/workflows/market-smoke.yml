@@ -22,18 +22,24 @@ jobs:
           # Render's free instance may still be replacing the old revision.
           # Wait for the actual new API payload, not just HTTP 200 from old code.
           for _attempt in $(seq 1 18); do
-            if python -c 'import json; d=json.load(open("/tmp/live.json")); assert len(d.get("retrospective_volatility_studies", [])) >= 2'; then
+            if python -c 'import json,sys; d=json.load(open("/tmp/live.json")); sys.exit(0 if len(d.get("retrospective_volatility_studies", [])) >= 2 else 1)'; then
               break
             fi
             sleep 10
             curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=live" -o /tmp/live.json
           done
+          # The initial replay/UI requests may have been served by a previous
+          # Render revision during deployment. Re-read them only AFTER the
+          # new live API payload is confirmed; never compare mixed revisions.
+          curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 35 "$BASE_URL/market" -o /tmp/market.html
+          curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z" -o /tmp/replay.json
           python - <<'PY'
           from pathlib import Path
           import json
           health = json.loads(Path('/tmp/health.json').read_text())
           assert health.get("status") == "ok"
           assert "Market Intelligence" in Path('/tmp/market.html').read_text()
+          assert "Historical volatility event study" in Path('/tmp/market.html').read_text()
           replay = json.loads(Path('/tmp/replay.json').read_text())
           live = json.loads(Path('/tmp/live.json').read_text())
           assert replay.get("desk") == live.get("desk") == "market"
@@ -74,6 +80,12 @@ jobs:
           assert "scenarios" in live and "latest_metrics" in live
           assert not ("supabase_key" in live or "geopolitical_leads" in live)
           print("MARKET_DESK_SMOKE_OK",len(replay["observations"]),len(live["observations"]))
+          print("REAL_CBOE_RETROSPECTIVE_STUDY", [
+              (x["symbol"],x["observed_daily_sessions"],
+               x["horizons"]["5"]["completed_triggered_windows"],
+               x["horizons"]["5"]["conditional_median_index_change_pct"])
+              for x in studies
+          ])
           PY
           PRIVATE_STATUS=$(curl -sS -o /tmp/trade-history-unauthorized.json -w '%{http_code}' --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/trade-synthesis/history")
           test "$PRIVATE_STATUS" = "401"
