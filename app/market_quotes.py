@@ -23,22 +23,39 @@ ZERO = Decimal(0)
 
 
 def configuration():
-    feed = os.getenv("ALPACA_DATA_FEED", "disabled").lower()
+    """Keep historical SIP Basic separate from entitled SIP realtime.
+
+    Legacy ALPACA_DATA_FEED is retained for older deployments. New deployments
+    should set explicit ALPACA_DATA_MODE to remove any entitlement ambiguity.
+    """
+    requested = os.getenv("ALPACA_DATA_MODE", "").strip().lower()
+    legacy = os.getenv("ALPACA_DATA_FEED", "disabled").strip().lower()
+    if not requested:
+        requested = {"sip":"entitled_sip_realtime", "iex":"iex_realtime"}.get(legacy,"disabled")
+    modes = {"basic_sip_delayed":"sip", "iex_realtime":"iex",
+             "entitled_sip_realtime":"sip"}
+    feed = modes.get(requested,"disabled")
     key = os.getenv("ALPACA_MARKET_DATA_KEY_ID")
     secret = os.getenv("ALPACA_MARKET_DATA_SECRET")
+    configured = bool(key and secret and requested in modes)
     return {
         "provider": "alpaca_data_api",
-        "configured": bool(key and secret and feed in ("sip", "iex")),
-        "feed": feed if feed in ("sip", "iex") else "disabled",
+        "configured": configured,
+        "mode": requested if requested in modes else "disabled",
+        "feed": feed,
         "scope": "read_only_data_host",
+        # A historical SIP series can be consolidated without granting
+        # subscription rights to realtime SIP latest/stream endpoints.
+        "historical_consolidated": feed == "sip",
+        "realtime_consolidated": requested == "entitled_sip_realtime",
         "consolidated": feed == "sip",
         "execution_enabled": False,
-        "coverage_note": ("IEX observes one trading venue, not consolidated US market prices"
-                          if feed == "iex" else
-                          "SIP requires correct plan/entitlement; setting this flag alone is not proof"
-                          if feed == "sip" else "No licensed feed configured"),
+        "coverage_note": {
+            "basic_sip_delayed":"Free historical SIP bars, limited to data older than 15 minutes; NO SIP realtime quotes",
+            "iex_realtime":"Realtime IEX is one exchange, not a consolidated U.S. market",
+            "entitled_sip_realtime":"Realtime SIP requested; server must verify actual vendor entitlement",
+        }.get(requested, "Market data credentials and explicit access mode not configured"),
     }
-
 
 async def api_json(path: str, params: dict, *, max_bytes=1_500_000) -> dict:
     c = configuration()
@@ -46,6 +63,20 @@ async def api_json(path: str, params: dict, *, max_bytes=1_500_000) -> dict:
         raise ValueError("Licensed market data credentials or feed configuration missing")
     if not path.startswith("/v2/stocks/") or ".." in path:
         raise ValueError("Invalid market-data path")
+    if params.get("feed") != c["feed"]:
+        raise ValueError("Vendor feed conflicts with declared entitlement mode")
+    if c["mode"] == "basic_sip_delayed":
+        if not path.endswith("/bars"):
+            raise ValueError("Basic free SIP mode permits historical bars only")
+        end_text = params.get("end")
+        if not isinstance(end_text,str):
+            raise ValueError("Basic SIP historical request needs explicit nonrecent end")
+        try:
+            end_time = timestamp(end_text)
+        except (ValueError,AttributeError) as exc:
+            raise ValueError("Basic SIP request end must be timezone-aware") from exc
+        if end_time > datetime.now(timezone.utc) - timedelta(minutes=16):
+            raise ValueError("Basic SIP historical request would cross the vendor's 15-minute entitlement boundary")
     headers = {
         "APCA-API-KEY-ID": os.environ["ALPACA_MARKET_DATA_KEY_ID"],
         "APCA-API-SECRET-KEY": os.environ["ALPACA_MARKET_DATA_SECRET"],
@@ -132,6 +163,10 @@ async def vendor_snapshot(ticker: str) -> dict:
                 "execution_enabled": False, "reason": cfg["coverage_note"]}
     now = datetime.now(timezone.utc)
     feed = cfg["feed"]
+    if cfg["mode"] == "basic_sip_delayed":
+        return {"ticker":ticker, "status":"historical_only", "feed":"sip",
+                "mode":"basic_sip_delayed", "execution_enabled":False,
+                "reason":"Alpaca Basic allows older SIP history, not SIP latest quotes or executable order levels"}
     try:
         quote, trade, bars = await asyncio.gather(
             api_json(f"/v2/stocks/{ticker}/quotes/latest", {"feed": feed}),
