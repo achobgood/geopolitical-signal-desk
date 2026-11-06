@@ -126,7 +126,7 @@ Market intelligence section after live authentication and public-read parity che
 - Protected `GET /v1/market/experiments` pages through every registered
   hypothesis, parameter trial, result, rejection reason, freeze and final decision.
 
-SQL timestamps govern the preceding trading day 16:15–19:00 Eastern issuance
+SQL timestamps govern the preceding trading day 16:30–19:00 Eastern issuance
 window. Source requests that finish after the lock cannot create an earlier
 forecast. Initial live model `momentum-1-research-v1` is explicitly an unselected,
 uncalibrated research candidate. Missing consolidated Alpaca history records an
@@ -170,3 +170,7 @@ Run `python scripts/verify_forecast_database.py --isolated-local-only` with loca
 ## Unified production frontend
 
 Use [Signal Desk](https://geopolitical-signal-command.boldbaron8.chatgpt.site/#markets) for both geopolitical and market intelligence. The legacy Render `/market` route redirects to that same Site; it accepts no caller-selected redirect or forwarded credentials. The previous HTML is retained as versioned source, not served as another dashboard. FastAPI, collection, forecasting, evaluation, authorization, and future private trading infrastructure remain on Render; Supabase remains authoritative. The Site uses fixed read-only server requests and never receives private brokerage/portfolio execution capabilities.
+
+Forecast issuance waits until 16:30 Eastern so the Basic SIP request end (actual collection time minus 16 minutes) is safely later than the regular closing print. Before that time, current-session price captures and issuance are rejected even if a provider returns a same-date partial daily bar.
+
+The buffer follows the documented delayed-history boundary and daily-bar aggregation semantics in [Alpaca’s official market-data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq). Publication/correction timing remains explicit in immutable source receipts.

@@ -24,9 +24,11 @@ from pathlib import Path
 def build_checks(repo):
     sys.path.insert(0, str(repo))
     from app.market_calendar import is_expected_market_session
-    source=(repo/'db/market_forecasts_v5.sql').read_text()
-    fn=re.search(r'create function private.market_issue_forecast_v1\(p jsonb\).*?end \$\$;',source,re.S).group(0)
-    fn=fn.replace('create function','create or replace function',1).replace('t timestamptz:=clock_timestamp()',"t timestamptz:='2026-11-04T18:00:00-05:00'::timestamptz")
+    source=(repo/'db/market_forecast_close_availability_v6.sql').read_text()
+    fn=re.search(r'create or replace function private.market_issue_forecast_v1\(p jsonb\).*?end \$\$;',source,re.S).group(0)
+    real_issue=fn
+    real_capture=re.search(r'create or replace function private.market_capture_forecast_prices_v1\(p jsonb\).*?end \$\$;',source,re.S).group(0)
+    fn=fn.replace('t timestamptz:=clock_timestamp()',"t timestamptz:='2026-11-04T18:00:00-05:00'::timestamptz")
     days=[]; day=date(2026,11,5)
     while len(days)<61:
         if is_expected_market_session(day): days.append(day)
@@ -53,13 +55,29 @@ def build_checks(repo):
     sql+='set role service_role;\nselect pg_temp.require((public.market_capture_forecast_prices_v1('+q(p)+")->>'id')='1','actual valid capture inserts');\nreset role;\n"
     sql+="""do $$ declare rejected boolean:=false; begin begin perform public.market_issue_forecast_v1('{}'::jsonb); exception when others then rejected:=sqlerrm like 'Outside prior trading day%' or sqlerrm like 'Forecast target/model contract mismatch%'; end; perform pg_temp.require(rejected,'backdated/invalid issuance rejected against actual server clock'); end $$;
     """
+    # The daily timestamp is not completion evidence: at16:15ET, Basic end15:59.
+    partial=json.loads(json.dumps(p)); partial['input_bars']=bars[:-1]; partial['bars_sha256']='0'*64
+    for early in ('16:15:00','16:29:59.999999'):
+        instant="('2026-11-04T"+early+"-05:00'::timestamptz)"
+        early_capture=real_capture.replace('clock_timestamp()',instant)
+        early_issue=real_issue.replace('clock_timestamp()',instant)
+        sql+=early_capture+'\n'+early_issue+'\n'
+        sql+="do $$ declare rejected boolean:=false; begin begin perform public.market_capture_forecast_prices_v1("+q(partial)+"); exception when others then rejected:=sqlerrm='Incomplete current session'; end; perform pg_temp.require(rejected,'current daily capture rejected before16:30: "+early+"'); end $$;\n"
+        sql+="do $$ declare rejected boolean:=false; begin begin perform public.market_issue_forecast_v1("+q(forecast)+"); exception when others then rejected:=sqlerrm like 'Outside prior trading day%'; end; perform pg_temp.require(rejected,'issuance rejected before16:30: "+early+"'); end $$;\n"
+    sql+=real_capture+'\n'+real_issue+'\n'
     # Invalid capture tries each get a distinct hash but must never add a row.
     for label, mut in [('missing_ohlc',lambda x:x['input_bars'][0].pop('open')),('gap',lambda x:x['input_bars'].pop(20)),('nan',lambda x:x['input_bars'][0].update(close='NaN')),('holiday',lambda x:x['input_bars'][20].update(session='2026-09-07'))]:
         obj=json.loads(json.dumps(p)); mut(obj); obj['bars_sha256']='b'*64
         sql+="do $$ declare rejected boolean:=false; begin begin perform public.market_capture_forecast_prices_v1("+q(obj)+"); exception when others then rejected:=true; end; perform pg_temp.require(rejected,'invalid capture rejected: "+label+"'); end $$;\n"
     sql+="select pg_temp.require((select count(*)=1 from public.market_forecast_prices),'rejected captures leave no rows');\n"
     sql+="insert into public.market_forecast_prices(id,symbol,provider,feed,adjustment,source_url,captured_at,observed_session,bars_sha256,input_bars,quality) overriding system value values(2,'SPY','alpaca','sip','split','https://data.alpaca.markets/v2/stocks/SPY/bars','2026-11-04T17:00:00-05:00','2026-11-04','"+'e'*64+"',"+q(bars[:-1])+",'{}');\n"
-    sql+=fn+'\nset role service_role;\nselect pg_temp.require((public.market_issue_forecast_v1('+q(forecast)+")->>'direction')='UP','valid clock-fixture issuance succeeds');\n"
+    # A pre-buffer capture cannot be reused later even when prices are unchanged.
+    sql+="insert into public.market_forecast_prices(id,symbol,provider,feed,adjustment,source_url,captured_at,observed_session,bars_sha256,input_bars,quality) overriding system value values(7,'SPY','alpaca','sip','split','https://data.alpaca.markets/v2/stocks/SPY/bars','2026-11-04T16:15:00-05:00','2026-11-04','"+'f'*64+"',"+q(bars[:-1])+",'{}');\n"
+    early_forecast=json.loads(json.dumps(forecast)); early_forecast['reference_capture_id']=7; early_forecast['features']={'source_price_capture_id':7,'usable_at':'2026-11-04T16:15:00-05:00'}
+    sql+=fn+'\n'
+    sql+="do $$ declare rejected boolean:=false; begin begin perform public.market_issue_forecast_v1("+q(early_forecast)+"); exception when others then rejected:=sqlerrm='Unavailable/stale reference'; end; perform pg_temp.require(rejected,'a pre-buffer capture cannot qualify at a later issuance time'); end $$;\n"
+    sql+='set role service_role;\nselect pg_temp.require((public.market_issue_forecast_v1('+q(forecast)+")->>'direction')='UP','valid clock-fixture issuance succeeds');\n"
+
     forecast['counterevidence']=['Modified duplicate must preserve original']
     sql+='select pg_temp.require((public.market_issue_forecast_v1('+q(forecast)+")->>'direction')='UP','duplicate cannot overwrite locked direction');\nreset role;\n"
     sql+="select pg_temp.require((select issued_at='2026-11-04T18:00:00-05:00' from public.market_forecasts where id=1),'caller backdated issued_at ignored');\n"
@@ -126,6 +144,7 @@ def main():
                         "create role service_role bypassrls; create schema private; "
                         "grant usage on schema private to service_role;"])
             run(psql + ["-f", str(repo / "db/market_forecasts_v5.sql")])
+            run(psql + ["-f", str(repo / "db/market_forecast_close_availability_v6.sql")])
             result = run(psql, input=build_checks(repo))
             if "CRITIC_SQL_CHECKS_PASSED" not in result.stdout:
                 raise RuntimeError("Local checks did not reach their final assertion")
