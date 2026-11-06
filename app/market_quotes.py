@@ -52,7 +52,7 @@ def configuration():
         "execution_enabled": False,
         "coverage_note": {
             "basic_sip_delayed":"Free historical SIP bars, limited to data older than 15 minutes; NO SIP realtime quotes",
-            "iex_realtime":"Realtime IEX is one exchange, not a consolidated U.S. market",
+            "iex_realtime":"IEX is partial-exchange data from one trading venue, not consolidated U.S. market quotes",
             "entitled_sip_realtime":"Realtime SIP requested; server must verify actual vendor entitlement",
         }.get(requested, "Market data credentials and explicit access mode not configured"),
     }
@@ -247,6 +247,7 @@ async def vendor_technical_research(ticker: str, adjustment: str = "split") -> d
             "mode":history["mode"],
             "adjustment":history["adjustment"],
             "adjustment_description":history["adjustment_description"],
+            "consolidated":history["historical_consolidated"],
             "historical_consolidated":history["historical_consolidated"],
             "realtime_consolidated":history["realtime_consolidated"],
             "last_vendor_session":history["quality"]["last_session"],
