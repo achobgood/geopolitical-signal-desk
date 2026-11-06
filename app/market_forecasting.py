@@ -18,7 +18,7 @@ from app.market_quotes import configuration
 
 MODEL = 'momentum-1-research-v1'
 CONFIG = {'return_sessions': 1, 'adjustment': 'split', 'probability': None,
-          'horizon_sessions': 1, 'lock_eastern': '19:00', 'selected_strategy': False}
+          'horizon_sessions': 1, 'earliest_issue_eastern': '16:30', 'lock_eastern': '19:00', 'selected_strategy': False}
 LABELS = {'SPY': 'S&P 500 proxy (SPY)', 'QQQ': 'Nasdaq-100 proxy (QQQ; not Nasdaq Composite)'}
 CALENDAR_SOURCE = 'https://www.nyse.com/trade/hours-calendars'
 CLAIM = 'The model produces reproducible forecasts. Predictive performance is not yet established.'
@@ -56,7 +56,7 @@ def issuance_window(now: datetime) -> dict:
         return {'status': 'NOT_PRECEDING_TRADING_DAY', 'eligible': False}
     target = next_session(day)
     cutoff = datetime.combine(day, time(19), NY)
-    start = datetime.combine(day, time(16, 15), NY)
+    start = datetime.combine(day, time(16, 30), NY)
     return {'status': 'ELIGIBLE' if start <= local <= cutoff else
             'LOCK_MISSED' if local > cutoff else 'AWAITING_REFERENCE_CLOSE',
             'eligible': start <= local <= cutoff, 'reference_session': str(day),
@@ -78,6 +78,9 @@ async def capture_price(store, symbol: str) -> dict:
         return {'status': 'NOT_CONFIGURED', 'reason': 'Alpaca read-only market-data credentials and explicit mode missing'}
     if not cfg['historical_consolidated']:
         return {'status': 'NONCONSOLIDATED', 'reason': 'IEX partial-exchange bars cannot establish the consolidated daily close'}
+    local_now = clock().astimezone(NY)
+    if is_expected_market_session(local_now.date()) and time(16, 15) <= local_now.time() < time(16, 30):
+        return {'status': 'AWAITING_DELAYED_CLOSE', 'reason': 'Current daily bar may still be incomplete under the delayed feed; collection resumes at 16:30 Eastern'}
     try:
         history = await fetch_historical_equity(symbol, adjustment='split')
         if history.get('status') != 'RESEARCH_ONLY':
@@ -101,7 +104,11 @@ def forecast_payload(symbol: str, window: dict, capture: dict | None, reason: st
     reasons = [reason] if reason else []
     reference_valid = False
     if bars:
-        if bars[-1]['session'] != window['reference_session']:
+        completed = datetime.combine(date.fromisoformat(window['reference_session']), time(16, 30), NY)
+        captured_at = datetime.fromisoformat(capture['captured_at'].replace('Z', '+00:00'))
+        if captured_at < completed:
+            reasons.append('Reference was captured before the delayed closing-data availability window')
+        elif bars[-1]['session'] != window['reference_session']:
             reasons.append('Latest daily reference is stale')
         elif len(bars) < 60:
             reasons.append('At least 60 complete daily bars are required')

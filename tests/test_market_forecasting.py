@@ -95,3 +95,26 @@ def test_flat_momentum_keeps_valid_reference_for_outcome_and_benchmark_evaluatio
     assert f['reference_capture_id']==8
     assert f['features']['source_price_capture_id']==8
     assert f['benchmarks']['always_up']=='UP'
+
+
+def test_basic_delayed_feed_cannot_lock_a_partial_current_daily_close():
+    # 16:15 Eastern minus adapter's16min boundary is15:59, before16:00close.
+    assert not m.issuance_window(datetime.fromisoformat('2026-11-06T21:15:00+00:00'))['eligible']
+    assert not m.issuance_window(datetime.fromisoformat('2026-11-06T21:29:59.999999+00:00'))['eligible']
+    assert m.issuance_window(datetime.fromisoformat('2026-11-06T21:30:00+00:00'))['eligible']
+    assert m.issuance_window(datetime.fromisoformat('2026-07-02T20:30:00+00:00'))['eligible']
+
+
+def test_older_same_session_capture_cannot_be_reused_after_close_buffer():
+    capture={'id':9,'captured_at':'2026-11-06T21:15:00Z','input_bars':[{'session':'2026-11-06','close':'100'} for _ in range(60)]}
+    f=m.forecast_payload('SPY',{'reference_session':'2026-11-06','target_session':'2026-11-09'},capture)
+    assert f['direction']=='ABSTAIN' and f['reference_capture_id'] is None
+    assert any('availability window' in x for x in f['abstention_reasons'])
+
+
+def test_rechecks_wait_during_partial_delayed_daily_bar_window(monkeypatch):
+    monkeypatch.setattr(m,'configuration',lambda:{'configured':True,'historical_consolidated':True})
+    monkeypatch.setattr(m,'clock',lambda:datetime.fromisoformat('2026-11-06T21:20:00+00:00'))
+    result=asyncio.run(m.capture_price(None,'SPY'))
+    assert result['status']=='AWAITING_DELAYED_CLOSE'
+    assert 'capture' not in result
