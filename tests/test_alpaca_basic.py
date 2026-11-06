@@ -74,7 +74,7 @@ def test_enforce_free_sip_entitlement_boundary_before_network(monkeypatch):
 
 def test_actual_pagination_and_adjustment_are_metadata_not_fake_prices(monkeypatch):
     enable_basic(monkeypatch)
-    import app.market_alpaca_history as m
+    import app.market_quotes as m
     source=fakebars()
     calls=[]
     async def mock_fetch(path,params,**kw):
