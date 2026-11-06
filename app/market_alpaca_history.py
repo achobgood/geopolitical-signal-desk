@@ -8,9 +8,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
-from app.market_quotes import (
-    NY, SYMBOL, api_json, configuration, positive, timestamp,
-)
+from app.market_quotes import SYMBOL, configuration, positive, timestamp
+from app import market_quotes as vendor
 from app.market_technicals import Bar
 from app.market import expected_completed_market_session
 
@@ -108,7 +107,7 @@ async def fetch_historical_equity(ticker: str, *, adjustment="split",
     for page in range(MAX_PAGES):
         params = request_params(mode=cfg["mode"], now=now, adjustment=adjustment,
                                 page_token=token)
-        response = await api_json(
+        response = await vendor.api_json(
             f"/v2/stocks/{ticker}/bars", params, max_bytes=1_500_000
         )
         chunk = response.get("bars")
