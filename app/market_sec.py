@@ -31,7 +31,9 @@ def configured_user_agent():
     return raw
 
 
-async def sec_json(url: str, user_agent: str) -> dict:
+async def sec_json(url: str, user_agent: str, *, max_bytes: int = SEC_MAX_BYTES) -> dict:
+    if max_bytes < 1 or max_bytes > 14_000_000:
+        raise ValueError("SEC response size cap invalid")
     parsed = urlsplit(url)
     if parsed.scheme != "https" or parsed.hostname not in ("www.sec.gov", "data.sec.gov"):
         raise ValueError("SEC URL not allowlisted")
@@ -42,7 +44,7 @@ async def sec_json(url: str, user_agent: str) -> dict:
                 data = bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)
-                    if len(data) > SEC_MAX_BYTES:
+                    if len(data) > max_bytes:
                         raise ValueError("Oversized SEC response")
                 payload = json.loads(data.decode("utf-8"))
     if not isinstance(payload, dict):
