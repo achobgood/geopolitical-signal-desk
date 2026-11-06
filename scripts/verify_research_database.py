@@ -1,4 +1,4 @@
-"""Independent v7 role, key-rotation, immutability, and rolling quota checks.
+"""Independent v7–v9 role, key-rotation, immutability, and rolling quota checks.
 
 Usage: python scripts/verify_research_database.py --isolated-local-only
 
@@ -18,9 +18,10 @@ def q(value):return "'"+json.dumps(value).replace("'","''")+"'::jsonb"
 
 def checks(repo):
     migration=(repo/'db/market_research_v7.sql').read_text()
-    sql=base(repo)+migration+'\n'+(repo/'db/market_research_monitoring_v8.sql').read_text()+'\n'
-    claim=re.search(r'create function private.market_macro_claim_v1\(p_provider text,p_force boolean\).*?end \$\$;',migration,re.S).group(0)
-    claim=claim.replace('create function','create or replace function',1).replace('n timestamptz:=clock_timestamp()',"n timestamptz:='2026-11-06T00:30:00Z'::timestamptz")
+    calendar_migration=(repo/'db/market_catalyst_calendar_v9.sql').read_text()
+    sql=base(repo)+migration+'\n'+(repo/'db/market_research_monitoring_v8.sql').read_text()+'\n'+calendar_migration+'\n'
+    claim=re.search(r'create or replace function private.market_macro_claim_v1\(p_provider text,p_force boolean\).*?end \$\$;',calendar_migration,re.S).group(0)
+    claim=claim.replace('n timestamptz:=clock_timestamp()',"n timestamptz:='2026-11-06T00:30:00Z'::timestamptz")
     sql+=claim+'\n'
     sql+="""
 select pg_temp.require((select count(*)=8 from pg_class c join pg_namespace n on n.oid=c.relnamespace where (n.nspname,c.relname)in(('public','market_macro_captures'),('private','market_macro_checks'),('private','market_macro_check_results'),('public','market_risk_briefs'),('private','market_finance_keys'),('private','market_portfolio_snapshots'),('private','market_finance_research_reports'),('private','market_portfolio_analyses'))and c.relrowsecurity),'All eight new tables enforce RLS');
@@ -58,10 +59,25 @@ select pg_temp.require(not has_function_privilege('anon','public.market_macro_he
 set role service_role;
 select pg_temp.require(jsonb_typeof(public.market_macro_health_v1())='array','Backend source check health is typed and bounded');
 reset role;
+do $$declare cid bigint;body jsonb;denied boolean:=false;begin
+ cid:=(private.market_macro_claim_v1('bea_release_calendar',false)->>'check_id')::bigint;
+ perform pg_temp.require(cid is not null,'New official calendar claim succeeds');
+ body:=jsonb_build_object('provider','bea_release_calendar','source_as_of','2026-11-06','document_sha256',repeat('c',64),'raw_gzip_base64','AA==','source_urls',jsonb_build_array('https://evil.example/calendar'),'data',jsonb_build_object('scheduled_event_count',1),'events',jsonb_build_array(jsonb_build_object('event_id','local-only-fixture')));
+ begin perform private.market_macro_capture_v1(body,cid);exception when others then denied:=sqlerrm='Unapproved macro origin';end;
+ perform pg_temp.require(denied,'Unreviewed calendar origin rejected');
+ body:=jsonb_set(body,'{source_urls}',jsonb_build_array('https://www.bea.gov/news/schedule/ics/online-calendar-subscription.ics'));
+ perform pg_temp.require((private.market_macro_capture_v1(body,cid)->>'id')is not null,'Reviewed calendar persists through existing immutable boundary');
+ insert into private.market_macro_checks(provider)values('bls_employment')returning id into cid;
+ body:=jsonb_build_object('provider','bls_employment','source_as_of','2026-10','document_sha256',repeat('d',64),'raw_gzip_base64','AA==','source_urls',jsonb_build_array('https://api.bls.gov/publicAPI/v1/timeseries/data/'),'data','{}'::jsonb);
+ denied:=false;begin perform private.market_macro_capture_v1(body,cid);exception when others then denied:=sqlerrm='Unapproved BLS series origin';end;
+ perform pg_temp.require(denied,'BLS batch receipt without approved series IDs is rejected');
+ body:=jsonb_set(body,'{requested_series_ids}',jsonb_build_array('CES0000000001','LNS14000000','CES0500000003'));
+ perform pg_temp.require((private.market_macro_capture_v1(body,cid)->>'id')is not null,'BLS batch with exact reviewed series accepted');
+end $$;
 select 'INDEPENDENT_RESEARCH_PRIVACY_DATABASE_PASSED';
 """
     return sql
 if __name__=='__main__':
     module.build_checks=checks
     module.main()
-    print('Independent v7 local database: RLS/private privilege isolation/key rotation/portfolio immutability/rolling BLS quota checks passed.')
+    print('Independent v7–v9 local database: RLS/private privilege isolation/key rotation/portfolio immutability/rolling BLS quota/calendar origin/BLS batch identity checks passed.')
