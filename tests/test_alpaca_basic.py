@@ -42,7 +42,7 @@ def test_free_sip_is_explicitly_historical_and_has_timezone_aware_cutoff(monkeyp
     assert p["adjustment"]=="split"
     assert datetime.fromisoformat(p["end"].replace("Z","+00:00")) == NOW-timedelta(minutes=16)
     assert "page_token" not in p
-    with pytest.raises(ValueError,match="corporate-action"):
+    with pytest.raises(ValueError,match="split or all"):
         request_params(mode="basic_sip_delayed",now=NOW,adjustment="raw")
 
 
@@ -101,7 +101,7 @@ def test_actual_pagination_and_adjustment_are_metadata_not_fake_prices(monkeypat
 
 def test_conflicting_duplicate_and_invalid_volume_rejected():
     raw=fakebars()
-    revised=dict(raw[-1]);revised["c"]="999.99"
+    revised=dict(raw[-1]);revised["c"]=str(Decimal(revised["c"])+Decimal("0.01"))
     with pytest.raises(ValueError,match="Conflicting duplicate"):
         validate_equity_bars(raw+[revised],expected_session=NOW.date())
     negative=dict(raw[-1]);negative["v"]="-100"
@@ -111,7 +111,7 @@ def test_conflicting_duplicate_and_invalid_volume_rejected():
 
 def test_repeated_cursor_aborts_without_unbounded_requests(monkeypatch):
     enable_basic(monkeypatch)
-    import app.market_alpaca_history as m
+    import app.market_quotes as m
     calls=[]
     async def same_cursor(path,params,**kw):
         calls.append(params)
