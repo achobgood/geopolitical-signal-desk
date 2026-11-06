@@ -4,7 +4,7 @@ Reference periods are not publication timestamps. Capture current vintages only;
 never use subsequently revised history as a past point-in-time feature snapshot.
 """
 from __future__ import annotations
-import asyncio, base64, csv, gzip, hashlib, io, json
+import asyncio, base64, csv, gzip, hashlib, io, json, logging, time
 from datetime import datetime, timezone, date
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
@@ -23,6 +23,24 @@ NYFED_NOTICE=(
  'Signal Desk is not affiliated with the New York Fed. The New York Fed does not sanction, endorse, or recommend any products or services offered by Signal Desk. '
  'SOFR data are calculated using data provided under license to the New York Fed by DTCC Solutions LLC; DTCC Solutions, its affiliates and source third parties have no liability for this material. '
  'Signal Desk calculations are its own transformations.')
+logger=logging.getLogger(__name__)
+
+
+class OfficialSourceDeclined(ValueError):
+    """Keep a bounded provider status, never its arbitrary response message."""
+    def __init__(self,status):
+        self.provider_status=status if status in ('REQUEST_NOT_PROCESSED','REQUEST_FAILED','REQUEST_NOT_REGISTERED','REQUEST_INVALID') else 'UNKNOWN_STATUS'
+        super().__init__('Official source declined request')
+
+
+def failure_diagnostic(error):
+    """Safe operational metadata only: no response body, headers, or error text."""
+    if isinstance(error,httpx.HTTPStatusError):return {'category':'UPSTREAM_HTTP','http_status':error.response.status_code}
+    if isinstance(error,OfficialSourceDeclined):return {'category':'PROVIDER_DECLINED','provider_status':error.provider_status}
+    if isinstance(error,(asyncio.TimeoutError,httpx.TimeoutException)):return {'category':'TIMEOUT'}
+    if isinstance(error,httpx.HTTPError):return {'category':'TRANSPORT'}
+    if isinstance(error,json.JSONDecodeError):return {'category':'INVALID_JSON'}
+    return {'category':'SOURCE_VALIDATION'}
 
 
 def number(v,minimum='-1e12',maximum='1e12'):
@@ -49,7 +67,7 @@ def parse_bls(documents, *, captured_at):
     latest={};sources=[];raw={}
     for key,series_id in BLS_SERIES.items():
         doc=documents[key]
-        if doc.get('status')!='REQUEST_SUCCEEDED':raise ValueError('BLS rejected request')
+        if doc.get('status')!='REQUEST_SUCCEEDED':raise OfficialSourceDeclined(doc.get('status'))
         series=(doc.get('Results') or {}).get('series') or []
         if len(series)!=1 or series[0].get('seriesID')!=series_id:raise ValueError('BLS series identity mismatch')
         rows=[]
@@ -154,11 +172,14 @@ async def refresh_macro(store, *, force=False):
         claim=await store.rpc('market_macro_claim_v1',{'p_provider':provider,'p_force':force})
         if not claim['claimed']:
             results.append({'provider':provider,'status':'CACHED','capture_id':claim.get('capture_id')});continue
+        started=time.monotonic()
         try:
             payload=await fetch_macro(provider)
             result=await store.rpc('market_macro_capture_v1',{'p':payload,'p_check_id':claim['check_id']})
             results.append({'provider':provider,'status':'CAPTURED','capture_id':result['id']})
-        except (httpx.HTTPError,asyncio.TimeoutError,ValueError,KeyError,TypeError,ZeroDivisionError):
+        except (httpx.HTTPError,asyncio.TimeoutError,ValueError,KeyError,TypeError,ZeroDivisionError) as error:
+            diagnostic=failure_diagnostic(error)
+            logger.warning('macro_source_unavailable provider=%s check_id=%s diagnostic=%s elapsed_ms=%s',provider,claim['check_id'],json.dumps(diagnostic,sort_keys=True),round((time.monotonic()-started)*1000))
             await store.rpc('market_macro_failure_v1',{'p_check_id':claim['check_id']})
-            results.append({'provider':provider,'status':'UNAVAILABLE','reason':'Official source response was unavailable or invalid; no substituted data'})
+            results.append({'provider':provider,'status':'UNAVAILABLE','reason':'Official source response was unavailable or invalid; no substituted data','diagnostic':diagnostic})
     return results
