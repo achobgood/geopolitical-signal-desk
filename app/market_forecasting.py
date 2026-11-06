@@ -71,6 +71,7 @@ def bar_payload(history: dict) -> list[dict]:
 
 async def capture_price(store, symbol: str) -> dict:
     from app.market_alpaca_history import fetch_historical_equity
+    from app.store import StoreUnavailable
     import httpx
     import asyncio
     cfg = configuration()
@@ -94,6 +95,11 @@ async def capture_price(store, symbol: str) -> dict:
             'bars_sha256': digest(bars), 'input_bars': bars,
             'quality': history['quality'], 'data_delay_minutes': history['data_delay_minutes']}})
         return {'status': 'CAPTURED', 'capture': result}
+    except httpx.HTTPStatusError as error:
+        return {'status':'PROVIDER_UNAVAILABLE','reason':'Market-data provider rejected the request; no invented close',
+          'diagnostic':{'category':'UPSTREAM_HTTP','http_status':error.response.status_code}}
+    except StoreUnavailable:
+        return {'status':'CAPTURE_STORAGE_UNAVAILABLE','reason':'Price source could not be committed to the immutable capture ledger'}
     except (ValueError, KeyError, TypeError, httpx.HTTPError, asyncio.TimeoutError):
         return {'status': 'PROVIDER_UNAVAILABLE', 'reason': 'Provider timeout, entitlement, malformed or incomplete source; no invented close'}
 
@@ -176,13 +182,6 @@ async def run_forecast_cycle(store, run_key: str, trigger: str) -> dict:
         return {'status': 'ALREADY_RECORDED', 'run_id': begin['id']}
     window = issuance_window(clock())
     details = {'window': window, 'issuance': [], 'evaluation': [], 'execution_enabled': False}
-    # Research intelligence remains useful when licensed equity data is absent.
-    try:
-        from app.market_risk import generate_risk_brief
-        research = await generate_risk_brief(store,refresh_sources=True)
-        details['risk_intelligence']={'status':research['status'],'brief_id':research['brief_id'],'source_refresh':research['source_refresh']}
-    except Exception:
-        details['risk_intelligence']={'status':'UNAVAILABLE','reason':'Source-bound briefing did not complete; no successful briefing is implied by the forecast-cycle receipt'}
     captures = {}
     if window.get('eligible'):
         for symbol in LABELS:
@@ -192,9 +191,21 @@ async def run_forecast_cycle(store, run_key: str, trigger: str) -> dict:
             if existing:
                 details['issuance'].append({'symbol': symbol, 'status': 'ALREADY_LOCKED', 'forecast_id': existing[0]['id']})
                 continue
+            if not issuance_window(clock()).get('eligible'):
+                details['issuance'].append({'symbol':symbol,'status':'LOCK_MISSED_BEFORE_COLLECTION'})
+                continue
             price = await capture_price(store, symbol)
             captures[symbol] = price
             payload = forecast_payload(symbol, window, price.get('capture'), price.get('reason'))
+            # Missing source data is an immutable failed ATTEMPT, not a locked
+            # no-reference forecast. A later run may recover before the cutoff.
+            if payload['reference_capture_id'] is None:
+                details['issuance'].append({'symbol':symbol,'status':'BLOCKED_NO_REFERENCE',
+                  'source_status':price['status'],'reason':price.get('reason','No eligible reference capture'),
+                  'reference_session':window['reference_session'],'target_session':window['target_session'],
+                  'model_version':MODEL,'retry_before':window['cutoff_at'],
+                  **({'diagnostic':price['diagnostic']}if price.get('diagnostic')else{})})
+                continue
             # SQL uses actual now and will reject a fetch that crosses the lock.
             if not issuance_window(clock()).get('eligible'):
                 details['issuance'].append({'symbol': symbol, 'status': 'LOCK_MISSED_DURING_COLLECTION'})
@@ -220,6 +231,13 @@ async def run_forecast_cycle(store, run_key: str, trigger: str) -> dict:
               'p_capture_id': price.get('capture', {}).get('id'), 'p_status': result['status'],
               'p_reason': result.get('reason', '')})
         details['evaluation'].append({'forecast_id': f['id'], 'status': rec['status']})
+    # Research intelligence remains useful when licensed equity data is absent.
+    try:
+        from app.market_risk import generate_risk_brief
+        research = await generate_risk_brief(store,refresh_sources=True)
+        details['risk_intelligence']={'status':research['status'],'brief_id':research['brief_id'],'source_refresh':research['source_refresh']}
+    except Exception:
+        details['risk_intelligence']={'status':'UNAVAILABLE','reason':'Source-bound briefing did not complete; no successful briefing is implied by the forecast-cycle receipt'}
     finish = await store.rpc('market_forecast_run_finish_v1', {'p_id': begin['id'], 'p_details': details})
     return {'status': 'RECORDED', 'run_id': begin['id'], **details, 'finished_at': finish['finished_at']}
 
@@ -284,16 +302,47 @@ def summarize_performance(forecasts: list[dict], outcomes: list[dict]) -> dict:
             'benchmarks':all_bench,'regimes':regimes,'brier_score':None,'calibration_error':None,
             'probability_status':'NOT_CALIBRATED'})
     return {'basis':'PROSPECTIVELY_RECORDED','groups':results,
-            'predictive_edge_established':False,'claim':CLAIM,
+            'predictive_edge_established':False,'claim':forecast_claim(forecasts),
             'retrospective_results_included':False}
+
+
+def forecast_claim(rows):
+    if not rows:return 'No prospective forecasts have been issued. No predictive performance is established.'
+    if not any(r['direction']in('UP','DOWN')for r in rows):return 'Only abstentions are recorded. No directional predictive performance is established.'
+    return CLAIM
+
+
+def summarize_issuance_coverage(receipts,*,now):
+    slots={}
+    for receipt in sorted(receipts,key=lambda r:r['id']):
+        details=receipt.get('details')or{};window=details.get('window')or{}
+        if not window.get('eligible')or not window.get('target_session'):continue
+        for attempt in details.get('issuance',[]):
+            symbol=attempt.get('symbol')
+            if symbol not in LABELS:continue
+            key=(symbol,window['target_session'],attempt.get('model_version',MODEL))
+            slot=slots.setdefault(key,{'symbol':symbol,'target_session':window['target_session'],'model_version':key[2],
+              'reference_session':window['reference_session'],'cutoff_at':window['cutoff_at'],'attempts':0,'forecast_id':None})
+            slot['attempts']+=1;slot['latest_attempt_status']=attempt['status'];slot['latest_run_id']=receipt['run_id']
+            if attempt.get('forecast_id')is not None:slot['forecast_id']=attempt['forecast_id']
+    for slot in slots.values():
+        closed=now>datetime.fromisoformat(slot['cutoff_at'])
+        slot['state']='ISSUED'if slot['forecast_id']is not None else'MISSED_WINDOW'if closed else'UNISSUED_RETRY_WINDOW_OPEN'
+    rows=list(slots.values())
+    return {'scope':'MOST_RECENT_500_COMPLETED_CYCLE_RECEIPTS','completed_receipts':len(receipts),
+      'attempted_symbol_sessions':len(rows),'issued_symbol_sessions':sum(x['state']=='ISSUED'for x in rows),
+      'missed_windows':sum(x['state']=='MISSED_WINDOW'for x in rows),
+      'retryable_unissued_slots':sum(x['state']=='UNISSUED_RETRY_WINDOW_OPEN'for x in rows),'slots':rows,
+      'limitations':'Repeated attempts are deduplicated by symbol/target/model. Unissued slots are coverage failures, never scored predictions. Missing scheduler runs or unfinished receipts are not inferred; this is a bounded operational cohort, separate from directional accuracy.'}
 
 
 async def public_forecasts(store):
     # No caller cutoff, portfolio lookup, raw bars or private strategy results.
     rows=await store.rpc('market_public_forecasts_v1', {})
-    return {'status':'RESEARCH_ONLY','forecasts':rows,'window':issuance_window(clock()),
+    cfg=configuration()
+    return {'status':'RESEARCH_ONLY'if rows else 'BLOCKED_MARKET_DATA'if not cfg['configured']or not cfg['historical_consolidated']else'NO_FORECAST_ISSUED','forecasts':rows,'window':issuance_window(clock()),
             'implementation_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             'labels':LABELS,'targets':[{'symbol':symbol,'label':label,'latest_forecast_id':next((f['id'] for f in rows if f['symbol']==symbol),None),'status':'RECORDED' if any(f['symbol']==symbol for f in rows) else 'NO_FORECAST_ISSUED'} for symbol,label in LABELS.items()],
             'execution_enabled':False,'selected_strategy':None,
-            'probability_status':'NOT_CALIBRATED','claim':CLAIM,
-            'data_source': {k:v for k,v in configuration().items() if k in ('configured','mode','coverage_note')}}
+            'probability_status':'NOT_CALIBRATED','claim':forecast_claim(rows),
+            'data_source': {k:v for k,v in cfg.items() if k in ('configured','mode','coverage_note')}}
