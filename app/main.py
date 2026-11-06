@@ -264,3 +264,6 @@ register_market_routes(app, authorize, bearer)
 
 from app.market_forecast_api import register_forecast_routes
 register_forecast_routes(app, authorize, bearer)
+
+from app.market_research_api import register_research_routes
+register_research_routes(app, authorize, bearer)

@@ -40,7 +40,7 @@ def main():
         assert row['issued_at']<=row['cutoff_at']
         assert row['target_session']>row['reference_session']
         assert row['probability'] is None and row['selected_strategy'] is False
-    for path in ('/v1/market/forecasts','/v1/market/forecasts/performance','/v1/market/experiments','/v1/market/forecasts/runs'):
+    for path in ('/v1/market/forecasts','/v1/market/forecasts/performance','/v1/market/experiments','/v1/market/forecasts/runs','/v1/market/finance/status','/v1/market/finance/portfolio','/v1/market/risk-brief'):
         assert get(path)[0]==401,path
     print(json.dumps({'status':'LIVE_FORECAST_CONTRACT_ACCEPTED','implementation_sha256':EXPECTED,
                       'actual_forecasts':len(result['forecasts']),'window':result['window'],

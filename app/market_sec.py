@@ -17,7 +17,7 @@ import httpx
 
 from app.market import MarketObservation
 
-SEC_TICKERS = ("NVDA", "MSFT", "GOOGL", "AMZN", "META", "ORCL", "CRWV", "AMD")
+SEC_TICKERS = ("NVDA", "MSFT", "GOOGL", "AMZN", "META", "ORCL", "CRWV", "AMD", "CSCO")
 SEC_TICKER_INDEX = "https://www.sec.gov/files/company_tickers.json"
 SEC_FORMS = frozenset(("10-K", "10-Q", "8-K", "10-K/A", "10-Q/A", "8-K/A"))
 SEC_LIMIT = 24
