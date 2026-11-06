@@ -94,11 +94,11 @@ Keep **Geopolitical Escalation Watch II** enabled. The user authorized appending
 
 ## Market Intelligence (additive feature)
 
-Market Intelligence is a separate evidence-led stock-market research desk, using
-dedicated source records and historical cutoff validation. A read-only dashboard
-is served at /market by the **same** Render service, with /v1/market/snapshot
-for authorized readers. The public readout intentionally contains only public
-market research. See [Market Intelligence design, rollout and coverage](docs/market-intelligence.md).
+Market Intelligence is an evidence-led research section within the existing
+Signal Desk ChatGPT Site, using dedicated source records and historical cutoff
+validation. Render retains /v1/market/snapshot for authorized readers and a
+bounded public projection; its legacy /market UI redirects to the unified Site.
+The public readout intentionally contains only public market research. See [Market Intelligence design, rollout and coverage](docs/market-intelligence.md).
 
 The market model tracks AI credit financing, returns on capex, permits/regulation,
 earnings, rates, broad market confirmation and geopolitical spillover.
@@ -112,8 +112,8 @@ Site remain unaffected.
 
 The existing Render FastAPI backend now owns append-only SPY (S&P 500 proxy)
 and QQQ (Nasdaq-100 proxy, not Nasdaq Composite) forecast issuance and outcome
-measurement. Brokerage execution remains disabled. The ChatGPT Site is the
-intended unified frontend; `/market` remains available until Site parity passes.
+measurement. Brokerage execution remains disabled. The existing ChatGPT Site is the unified frontend; `/market` redirects to its
+Market intelligence section after live authentication and public-read parity checks.
 
 - `GET /v1/market/forecasts/public`: sanitized research forecasts and current source/lock status.
 - Owner/reader `GET /v1/market/forecasts`, `/evaluations`, `/performance`, `/runs`;
@@ -166,3 +166,7 @@ This is a capability statement, not evidence that a live directional forecast
 or its later outcome has already occurred. Actual counts come from the ledgers.
 
 Run `python scripts/verify_forecast_database.py --isolated-local-only` with local PostgreSQL 16 to repeat SQL invariant checks. It accepts no remote database address and creates no production fixtures. The existing baseline migrations were historically applied through the connected Supabase tool; new versioned files mirror their exact hosted migration versions.
+
+## Unified production frontend
+
+Use [Signal Desk](https://geopolitical-signal-command.boldbaron8.chatgpt.site/#markets) for both geopolitical and market intelligence. The legacy Render `/market` route redirects to that same Site; it accepts no caller-selected redirect or forwarded credentials. The previous HTML is retained as versioned source, not served as another dashboard. FastAPI, collection, forecasting, evaluation, authorization, and future private trading infrastructure remain on Render; Supabase remains authoritative. The Site uses fixed read-only server requests and never receives private brokerage/portfolio execution capabilities.

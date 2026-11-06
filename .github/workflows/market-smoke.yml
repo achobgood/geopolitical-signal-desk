@@ -10,15 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Verify live public market page and source-backed API
+      - name: Verify unified Site redirect and source-backed API
         env:
           BASE_URL: https://geopolitical-signal-desk.onrender.com
         run: |
           set -euo pipefail
           curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/health" -o /tmp/health.json
-          curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/market" -o /tmp/market.html
           curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z" -o /tmp/replay.json
           curl -fsS --retry 18 --retry-all-errors --retry-delay 10 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=live" -o /tmp/live.json
+          # Wait for the canonical frontend redirect through Render cutover.
+          for _attempt in $(seq 1 30); do
+            MARKET_STATUS=$(curl -sS --retry 3 --retry-all-errors --retry-delay 2 -D /tmp/market.headers -o /tmp/market.body -w '%{http_code}' --connect-timeout 10 --max-time 35 "$BASE_URL/market")
+            if [ "$MARKET_STATUS" = "307" ]; then
+              break
+            fi
+            sleep 10
+          done
+          test "$MARKET_STATUS" = "307"
           # Render's free instance may still be replacing the old revision.
           # Wait for the actual new API payload, not just HTTP 200 from old code.
           for _attempt in $(seq 1 18); do
@@ -28,18 +36,18 @@ jobs:
             sleep 10
             curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=live" -o /tmp/live.json
           done
-          # The initial replay/UI requests may have been served by a previous
+          # The initial replay requests may have been served by a previous
           # Render revision during deployment. Re-read them only AFTER the
           # new live API payload is confirmed; never compare mixed revisions.
-          curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 35 "$BASE_URL/market" -o /tmp/market.html
           curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z" -o /tmp/replay.json
           python - <<'PY'
           from pathlib import Path
           import json
           health = json.loads(Path('/tmp/health.json').read_text())
           assert health.get("status") == "ok"
-          assert "Market Intelligence" in Path('/tmp/market.html').read_text()
-          assert "Historical volatility event study" in Path('/tmp/market.html').read_text()
+          headers = Path('/tmp/market.headers').read_text().splitlines()
+          locations = [line.split(':', 1)[1].strip() for line in headers if line.lower().startswith('location:')]
+          assert locations == ['https://geopolitical-signal-command.boldbaron8.chatgpt.site/#markets']
           replay = json.loads(Path('/tmp/replay.json').read_text())
           live = json.loads(Path('/tmp/live.json').read_text())
           assert replay.get("desk") == live.get("desk") == "market"
@@ -93,3 +101,7 @@ jobs:
           test "$WATCH_STATUS" = "401"
           FUNDAMENTALS_PUBLIC=$(curl -sS -o /tmp/issuer-unauthorized.json -w '%{http_code}' --connect-timeout 10 --max-time 35 "$BASE_URL/v1/market/company-fundamentals/NVDA")
           test "$FUNDAMENTALS_PUBLIC" = "401"
+          SITE_STATUS=$(curl -sS -o /tmp/site-market-unauthorized.json -w '%{http_code}' --connect-timeout 10 --max-time 35 https://geopolitical-signal-command.boldbaron8.chatgpt.site/api/market)
+          test "$SITE_STATUS" = "401"
+          SITE_SPOOF_STATUS=$(curl -sS -o /tmp/site-market-spoof-denied.json -w '%{http_code}' --connect-timeout 10 --max-time 35 -H 'oai-authenticated-user-id: spoof' -H 'oai-authenticated-user-email: spoof@example.org' https://geopolitical-signal-command.boldbaron8.chatgpt.site/api/market)
+          test "$SITE_SPOOF_STATUS" = "401"

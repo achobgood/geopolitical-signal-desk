@@ -98,7 +98,10 @@ def test_all_private_market_operations_require_writer_or_reader_auth(client):
 
 
 def test_public_market_only_queries_market_tables(client):
-    assert client.get("/market").status_code == 200
+    response = client.get("/market", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://geopolitical-signal-command.boldbaron8.chatgpt.site/#markets"
+    assert client.fake.calls == []
     r = client.get("/v1/market/public-snapshot?mode=replay&as_of=2026-11-03T20:00:00Z")
     assert r.status_code == 200
     assert r.json()["desk"] == "market"
@@ -239,3 +242,11 @@ def test_feed_health_is_not_synonymous_with_fresh_tradable_quote():
         2026, 11, 5, 23, tzinfo=timezone.utc), mode="live"))
     assert status["feed_health"]["cboe_vix"]["freshness"] == "stale_or_unknown"
     assert status["coverage"]["price_feed"] == "not_connected"
+
+
+def test_market_redirect_has_fixed_destination_and_never_forwards_query_credentials(client):
+    response=client.get('/market?next=https://evil.example&token=canary',follow_redirects=False)
+    assert response.status_code==307
+    assert response.headers['location']=='https://geopolitical-signal-command.boldbaron8.chatgpt.site/#markets'
+    assert 'canary' not in response.text
+    assert client.fake.calls==[]
