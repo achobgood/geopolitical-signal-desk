@@ -262,7 +262,7 @@ async def vendor_technical_research(ticker: str, adjustment: str = "split") -> d
                 "Live consolidated quote, broker account, tax lots and earnings calendar not verified",
                 "Issuer credit spreads and broad market breadth not connected",
                 *([] if history["historical_consolidated"] else
-                  ["IEX research is single-venue partial-exchange data"]),
+                  ["IEX research is single exchange partial-exchange data, not consolidated"]),
                 *([] if history["status"]=="RESEARCH_ONLY" else
                   ["Latest complete vendor daily session is stale"]),
                 "No automatic brokerage order execution",
