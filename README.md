@@ -107,3 +107,62 @@ does not mean this platform was running or alerted at the time.
 Price feeds, credit feeds, autonomous market research and trade execution
 are **not** currently connected. The original geopolitical tools, alerts and
 Site remain unaffected.
+
+## Prospective next-session research
+
+The existing Render FastAPI backend now owns append-only SPY (S&P 500 proxy)
+and QQQ (Nasdaq-100 proxy, not Nasdaq Composite) forecast issuance and outcome
+measurement. Brokerage execution remains disabled. The ChatGPT Site is the
+intended unified frontend; `/market` remains available until Site parity passes.
+
+- `GET /v1/market/forecasts/public`: sanitized research forecasts and current source/lock status.
+- Owner/reader `GET /v1/market/forecasts`, `/evaluations`, `/performance`, `/runs`;
+  the full paths use `/v1/market/forecasts` as their prefix.
+- Owner `POST /v1/market/forecasts/run` with a unique `run_key`; scheduler-only
+  `POST /v1/market/forecasts/scheduled` reuses the existing Vault credential.
+- Owner `POST /v1/market/experiments/run` with `study_id` and `instrument`.
+  Inputs, labels, time splits and code hashes come from server-owned immutable
+  records. No caller-submitted performance or prices are accepted.
+- Protected `GET /v1/market/experiments` pages through every registered
+  hypothesis, parameter trial, result, rejection reason, freeze and final decision.
+
+SQL timestamps govern the preceding trading day 16:15–19:00 Eastern issuance
+window. Source requests that finish after the lock cannot create an earlier
+forecast. Initial live model `momentum-1-research-v1` is explicitly an unselected,
+uncalibrated research candidate. Missing consolidated Alpaca history records an
+ABSTAIN with no invented reference price. IEX partial exchange data cannot
+establish the required consolidated daily close. No credentials are inferred.
+
+After each target session's 16:30 Eastern publication buffer, an independent
+cycle fetches actual later consolidated history. PostgreSQL recomputes the exact
+reference-to-target outcome. Missing target dates and revised reference/target
+closes produce unresolved states. Recent observed forecasts are rechecked for
+revisions for ten calendar days; older source revisions require an explicit
+owner re-evaluation. Price changes exclude dividends and are not trading returns.
+
+The fixed A–F experiment search records all configurations before execution,
+trains chronologically, and freezes the development winner before a single final
+holdout. Holdout sessions are reserved once per instrument, including across
+renamed datasets and overlapping windows. A rejected holdout cannot promote a
+runner-up. At least 100 held-out directional observations, both classes,
+coverage, balanced accuracy, and positive paired block-bootstrap improvement
+against always-up, momentum and training-majority are required. Full-cohort
+comparisons count model abstentions as incorrect so selective abstention cannot
+hide a baseline loss. Probabilities remain uncalibrated. An inadequate cohort
+records a blocked study with zero tested hypotheses and no invented results.
+
+The calendar is bounded to the verified NYSE 2026–2028 published schedule;
+unplanned exchange closures remain an external condition requiring a calendar
+update. Forecast/performance/experiment ledgers have RLS, mutation-denying
+triggers, and no direct end-user privileges. Server-only write RPC wrappers call
+narrow private functions; the service key cannot directly insert ledger rows.
+
+Apply the versioned migrations in order. Activate the single
+`market-forecast-cycle` job only after the live scheduled route passes checks.
+Existing geopolitical, market reference and watch schedules remain unchanged.
+
+**The model produces reproducible forecasts. Predictive performance is not yet established.**
+This is a capability statement, not evidence that a live directional forecast
+or its later outcome has already occurred. Actual counts come from the ledgers.
+
+Run `python scripts/verify_forecast_database.py --isolated-local-only` with local PostgreSQL 16 to repeat SQL invariant checks. It accepts no remote database address and creates no production fixtures. The existing baseline migrations were historically applied through the connected Supabase tool; new versioned files mirror their exact hosted migration versions.

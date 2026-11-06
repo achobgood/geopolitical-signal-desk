@@ -1,0 +1,18 @@
+name: Live Prospective Forecast Contract
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-forecast-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify this implementation, public research contract and private-route isolation
+        run: python scripts/verify_live_forecasts.py

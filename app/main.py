@@ -261,3 +261,6 @@ async def collect_fed(store=Depends(get_store)):
 # Additive market domain. Existing geopolitical routes and access controls remain unchanged.
 from app.market import register_market_routes
 register_market_routes(app, authorize, bearer)
+
+from app.market_forecast_api import register_forecast_routes
+register_forecast_routes(app, authorize, bearer)

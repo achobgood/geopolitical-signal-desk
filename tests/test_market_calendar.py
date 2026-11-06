@@ -12,7 +12,9 @@ def test_known_regular_us_exchange_holidays():
     assert date(2026,11,26) in market_holidays(2026) # Thanksgiving
     assert date(2026,6,19) in market_holidays(2026) # Juneteenth
     assert date(2026,7,3) in market_holidays(2026) # Observed July 4
-    assert date(2021,12,31) in market_holidays(2021) # Observed next Jan 1
+    assert is_expected_market_session(date(2021,12,31)) # NYSE does not observe Saturday New Year
+    assert is_expected_market_session(date(2027,12,31))
+    assert not is_expected_market_session(date(2025,1,9))
     assert not is_expected_market_session(date(2026,11,26))
     assert is_expected_market_session(date(2026,11,25))
 

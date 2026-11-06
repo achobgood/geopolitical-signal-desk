@@ -47,7 +47,7 @@ def market_holidays(year:int) -> frozenset[date]:
     if not 2000 <= year <= 2100:
         raise ValueError("Unsupported exchange-calendar year")
     d={
-        observed(1,1,year), observed(1,1,year+1),
+        date(year,1,1) if date(year,1,1).weekday()!=6 else date(year,1,2),
         nth_weekday(year,1,0,3), # Martin Luther King
         nth_weekday(year,2,0,3), # Washington's birthday
         easter_sunday(year)-timedelta(days=2), # Good Friday
@@ -59,6 +59,11 @@ def market_holidays(year:int) -> frozenset[date]:
     }
     if year >= 2022:
         d.add(observed(6,19,year)) # Juneteenth starting in 2022
+    # Exceptional full closures since 2000 (NYSE announcements).
+    d.update(date.fromisoformat(x) for x in (
+        '2001-09-11','2001-09-12','2001-09-13','2001-09-14',
+        '2004-06-11','2007-01-02','2012-10-29','2012-10-30',
+        '2018-12-05','2025-01-09'))
     return frozenset(x for x in d if x.year==year)
 
 
