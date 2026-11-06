@@ -5,6 +5,8 @@ mixed filing accessions, inferred zero, or historical "prior detection" claims.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import defaultdict
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -34,6 +36,7 @@ INSTANT_CONCEPTS = {
 FORMS = frozenset(("10-K", "10-K/A"))
 MAX_CONCEPT_ENTRIES = 2500
 MAX_FACTS_BYTES = 14_000_000
+METHOD_VERSION = "sec-us-gaap-same-filing-annual-v1"
 
 
 def _day(value: Any) -> date | None:
@@ -228,6 +231,7 @@ def analyze_companyfacts(ticker: str, cik: int, document: dict,
         missing["revenue_yoy_pct"] = "A comparable preceding annual revenue fact using the same tag is unavailable"
     return {
         "status":"ANALYZED_WITH_GAPS" if missing else "ANALYZED",
+        "method_version":METHOD_VERSION,
         "ticker":ticker, "cik":cik,
         "issuer_name":str(document.get("entityName") or "")[:150],
         "source_url":f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json",
@@ -266,4 +270,10 @@ async def fetch_company_fundamentals(ticker: str) -> dict:
     url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
     # SEC has no API key; genuine contact UA and bounded request are mandatory.
     company = await sec_json(url,agent,max_bytes=MAX_FACTS_BYTES)
-    return analyze_companyfacts(ticker,cik,company,captured_at=datetime.now(timezone.utc))
+    checked = datetime.now(timezone.utc)
+    digest = hashlib.sha256(json.dumps(
+        company, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()).hexdigest()
+    result = analyze_companyfacts(ticker,cik,company,captured_at=checked)
+    result["source_document_sha256"] = digest
+    return result
