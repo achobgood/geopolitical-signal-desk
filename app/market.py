@@ -333,6 +333,32 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
     unique_technical = {}
     for item in technical_readouts:
         unique_technical.setdefault(item["symbol"],item)
+    # Study prior Cboe history using the ACTUALLY captured source OHLC.
+    # These are retrospective sample distributions, not pre-recorded alerts.
+    historical_studies = []
+    studied_symbols = set()
+    from app.market_volatility_study import study_cboe_history
+    for record in technical_records:
+        try:
+            symbol = record["symbol"]
+            if symbol in studied_symbols or symbol not in ("VIX", "VXN"):
+                continue
+            if (parse_time(record["calculated_at"]) > as_of
+                    or parse_time(record["captured_at"]) > as_of
+                    or record["source_observation_id"] not in visible_source_ids):
+                continue
+            study = study_cboe_history(
+                record["input_bars"], symbol=symbol,
+                collected_at=parse_time(record["calculated_at"]),
+            )
+            study["source_observation_id"] = record["source_observation_id"]
+            study["source_url"] = visible_source_ids[record["source_observation_id"]]["source_url"]
+            study["source_first_collected_at"] = visible_source_ids[record["source_observation_id"]]["collected_at"]
+            historical_studies.append(study)
+            studied_symbols.add(symbol)
+        except (KeyError, TypeError, ValueError):
+            continue
+
     forward_outcomes = []
     for result in forward_records:
         try:
@@ -362,6 +388,7 @@ async def snapshot(store, *, as_of: datetime, mode: str) -> dict:
         "scenarios": latest_scenarios,
         "watch_signals": visible_watches[:30],
         "technical_readouts": list(unique_technical.values()),
+        "retrospective_volatility_studies": historical_studies,
         "forward_observed_outcomes": forward_outcomes[:20],
         "coverage": {
             "price_feed": "not_connected",
