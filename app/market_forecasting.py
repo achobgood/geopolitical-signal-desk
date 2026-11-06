@@ -176,6 +176,13 @@ async def run_forecast_cycle(store, run_key: str, trigger: str) -> dict:
         return {'status': 'ALREADY_RECORDED', 'run_id': begin['id']}
     window = issuance_window(clock())
     details = {'window': window, 'issuance': [], 'evaluation': [], 'execution_enabled': False}
+    # Research intelligence remains useful when licensed equity data is absent.
+    try:
+        from app.market_risk import generate_risk_brief
+        research = await generate_risk_brief(store,refresh_sources=True)
+        details['risk_intelligence']={'status':research['status'],'brief_id':research['brief_id'],'source_refresh':research['source_refresh']}
+    except Exception:
+        details['risk_intelligence']={'status':'UNAVAILABLE','reason':'Source-bound briefing did not complete; no successful briefing is implied by the forecast-cycle receipt'}
     captures = {}
     if window.get('eligible'):
         for symbol in LABELS:
