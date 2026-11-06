@@ -11,7 +11,7 @@ from typing import Literal
 
 from app.models import StrictModel, PipelineIn
 from app.store import get_store
-from app.market_forecasting import run_forecast_cycle, public_forecasts, summarize_performance
+from app.market_forecasting import run_forecast_cycle, public_forecasts, summarize_performance, summarize_issuance_coverage, clock
 
 
 class StudyRequest(StrictModel):
@@ -57,6 +57,8 @@ def register_forecast_routes(app, authorize, bearer):
                     raise HTTPException(503,'Evaluation pagination failed; metrics withheld')
                 before=cursor
         result=summarize_performance(rows,outcomes)
+        receipts=await store.rows('market_forecast_run_receipts',limit=500)
+        result['issuance_coverage']=summarize_issuance_coverage(receipts,now=clock())
         result['cohort']={'scope':'MOST_RECENT_500_FORECASTS','forecast_limit':500,
                           'evaluation_rows':len(outcomes),'recent_forecast_cohort':len(rows)>=500}
         return result
