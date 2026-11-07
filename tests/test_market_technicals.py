@@ -140,6 +140,23 @@ def test_out_of_order_sessions_rejected():
         analyze_bars(c,captured_at=CAPTURE,symbol="VXN",instrument_kind="volatility_index")
 
 
+def test_historical_support_above_price_is_not_presented_as_current_support():
+    points=[{'side':'support','price':Decimal('100'),'view':v,'session':'2026-10-15'}for v in ('daily','weekly')]
+    zone=_confirmed_zones(points,Decimal('90'),Decimal('2'))[0]
+    assert zone['historical_pivot_side']=='support'
+    assert zone['current_role']=='BROKEN_SUPPORT_OVERHEAD_REFERENCE'
+    assert zone['relation_to_last_close']=='ABOVE_LAST_CLOSE'
+    assert zone['daily_pivots']==zone['weekly_pivots']==1
+    assert zone['first_pivot_session']=='2026-10-15'
+    assert 'not independent' in zone['confirmation_limit']
+
+
+def test_zone_containing_price_has_no_directional_support_or_resistance_role():
+    points=[{'side':'resistance','price':Decimal('100'),'view':v,'session':'2026-10-15'}for v in ('daily','weekly')]
+    zone=_confirmed_zones(points,Decimal('100'),Decimal('2'))[0]
+    assert zone['current_role']=='PRICE_WITHIN_ZONE'
+
+
 class FakeSourceStore:
     def __init__(self): self.records=[];self.technical=[];self.patches=[]
     async def rpc(self,name,body):
