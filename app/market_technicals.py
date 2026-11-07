@@ -200,13 +200,22 @@ def _confirmed_zones(points: list[dict], close: Decimal, atr: Decimal) -> list[d
             if len(cluster) < 2 or views != {"daily", "weekly"}:
                 continue
             center = sum((p["price"] for p in cluster), ZERO) / D(len(cluster))
+            lower,upper=max(CENT,center-half),center+half
+            relation='BELOW_LAST_CLOSE'if upper<close else'ABOVE_LAST_CLOSE'if lower>close else'PRICE_WITHIN_ZONE'
+            role=('POTENTIAL_SUPPORT'if side=='support'else'BROKEN_RESISTANCE_BELOW_REFERENCE')if relation=='BELOW_LAST_CLOSE'else(
+              ('POTENTIAL_RESISTANCE'if side=='resistance'else'BROKEN_SUPPORT_OVERHEAD_REFERENCE')if relation=='ABOVE_LAST_CLOSE'else'PRICE_WITHIN_ZONE')
             zones.append({
                 "side": side, "center": _fmt(center),
-                "lower": _fmt(max(CENT, center - half)),
-                "upper": _fmt(center + half),
+                "lower": _fmt(lower), "upper": _fmt(upper),
+                "historical_pivot_side":side,"relation_to_last_close":relation,"current_role":role,
                 "pivot_count": len(cluster),
+                "daily_pivots":sum(p['view']=='daily'for p in cluster),
+                "weekly_pivots":sum(p['view']=='weekly'for p in cluster),
+                "first_pivot_session":min((p['session']for p in cluster if p.get('session')),default=None),
+                "last_pivot_session":max((p['session']for p in cluster if p.get('session')),default=None),
                 "timeframes": ["daily", "weekly"],
                 "basis": "confirmed pivots with ATR-sized price zone",
+                "confirmation_limit":"Daily and weekly pivots use the same price history; they are not independent sources. A historical zone does not establish that a broken level has reversed role or will hold.",
                 "not_probability": True,
             })
     return sorted(zones, key=lambda z:(z["side"], D(z["center"])))
@@ -272,6 +281,8 @@ def analyze_bars(bars: list[Bar], *, captured_at: datetime, symbol: str, instrum
     pivot_points = _pivots(bars[-180:],2,2,"daily") + _pivots(weekly[-40:],1,1,"weekly")
     zones = _confirmed_zones(pivot_points,close,atr) if atr is not None else []
     setup = _setup(trend,rsi,close,atr,zones)
+    supports=[z for z in zones if z['current_role']=='POTENTIAL_SUPPORT']
+    resistances=[z for z in zones if z['current_role']=='POTENTIAL_RESISTANCE']
     bars_json = [x.as_dict() for x in bars]
     return {
         "method_version": METHOD,
@@ -287,6 +298,11 @@ def analyze_bars(bars: list[Bar], *, captured_at: datetime, symbol: str, instrum
         "rsi14":_fmt(rsi), "atr14":_fmt(atr),
         "momentum": "overbought" if rsi >= 70 else "oversold" if rsi <= 30 else "neutral",
         "trend":trend, "confirmed_zones":zones,
+        "nearest_levels":{
+          'support_below_last_close':max(supports,key=lambda z:D(z['center']))if supports else None,
+          'resistance_above_last_close':min(resistances,key=lambda z:D(z['center']))if resistances else None,
+          'price_within_zones':[z for z in zones if z['current_role']=='PRICE_WITHIN_ZONE'],
+          'scope':'Historical confirmed pivots relative to the last completed close; not live execution levels or a forecast.'},
         "setup": setup,
         "bars_sha256":hashlib.sha256(
             __import__("json").dumps(bars_json,sort_keys=True,separators=(",",":")).encode()
