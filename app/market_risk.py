@@ -6,6 +6,7 @@ import hashlib,json
 from pathlib import Path
 from app.market import snapshot,parse_time,expected_completed_market_session
 from app.market_calendar import NY
+from app.market_calendar import is_expected_market_session
 from app.market_catalysts import CALENDAR_PROVIDERS,catalyst_calendar
 
 METHOD='source-bound-market-risk-v1'
@@ -40,8 +41,42 @@ def _signal(metric, *, interpretation,quality='MEASURED'):
       'reference_session':str(metric.get('event_at') or '')[:10] or None,'interpretation':interpretation}
 
 
+def session_comparisons(market, *, expected):
+    """Compare exact adjacent completed sessions, retaining both source receipts.
+
+    A missing preceding session is not silently replaced by an older baseline.
+    Five-session stress and one-session relief describe different horizons.
+    """
+    previous=date.fromisoformat(expected)-timedelta(days=1)
+    while not is_expected_market_session(previous):previous-=timedelta(days=1)
+    def on(day):
+        return _latest_metrics({'observations':[o for o in market.get('observations',[])
+          if str(o.get('event_at')or'')[:10]==str(day)]})
+    current,baseline=on(expected),on(previous);result=[]
+    for code in ('vix_daily_close','vxn_daily_close','us_treasury_2y_yield_pct','us_treasury_10y_yield_pct'):
+        now,before=current.get(code),baseline.get(code)
+        item={'metric':code,'reference_session':expected,'baseline_session':str(previous),
+          'status':'MEASURED'if now and before else'MISSING_ADJACENT_SESSION',
+          'current':_signal(now,interpretation='Current completed-session observation')if now else None,
+          'baseline':_signal(before,interpretation='Exact preceding expected session; latest available retained vintage')if before else None,
+          'not_a_probability':True,'not_independent_corroboration':True}
+        if now and before:
+            a,b=Decimal(str(now['value'])),Decimal(str(before['value']));delta=a-b
+            item.update(change=str(delta),change_unit=now['unit'])
+            if code.startswith('us_treasury_'):
+                item.update(change_bp=str(delta*100),interpretation='Change in government par yield, not an issuer spread or funding-access measurement.')
+            else:
+                item.update(change_pct=str(((a/b-1)*100).quantize(Decimal('.01')))if b>0 else None,
+                  interpretation='One-session volatility change; easing is not proof of capitulation, a bottom or a tradable rebound.')
+        result.append(item)
+    return result
+
+
 def build_brief(market,macro_captures,geopolitical, *, as_of,monitoring_checks=()):
     metrics=_latest_metrics(market);expected=str(expected_completed_market_session(as_of));evidence=[];bull=[];bear=[];gaps=[]
+    comparisons=session_comparisons(market,expected=expected)
+    daily_vol=[x for x in comparisons if x['metric']in('vix_daily_close','vxn_daily_close')]
+    daily_relief=all(x['status']=='MEASURED'and Decimal(x['change'])<0 for x in daily_vol)
     vol={};current=True
     for symbol in ('vix','vxn'):
         close=metrics.get(symbol+'_daily_close');change=metrics.get(symbol+'_5session_change_pct')
@@ -71,6 +106,13 @@ def build_brief(market,macro_captures,geopolitical, *, as_of,monitoring_checks=(
     else:
         regime='MIXED';trajectory='MIXED_VOLATILITY_EVIDENCE'
         headline='Market-risk evidence is mixed; volatility alone does not establish equity direction.'
+    if current and daily_relief:
+        trajectory='LAST_SESSION_VOLATILITY_EASING_STRESS_ELEVATED'if elevated else'LAST_SESSION_VOLATILITY_EASING'
+        headline='Last-session volatility eased; broader participation and financing repair remain unconfirmed.'
+        bull.append('Both official volatility indices declined versus the exact preceding completed session; this supports relief, not a confirmed market bottom.')
+    if current and elevated:
+        bear.append('Volatility remains elevated under the disclosed descriptive thresholds (VIX 25 or VXN 30), even if the latest session eased.')
+    gaps.extend(x['metric']+': exact preceding-session comparison unavailable'for x in comparisons if x['status']!='MEASURED')
     for code in ('us_treasury_2y_yield_pct','us_treasury_10y_yield_pct'):
         if code in metrics:evidence.append(_signal(metrics[code],interpretation='Dated government par yield; a level alone cannot establish issuer financing access or monetary liquidity.'))
         else:gaps.append(code+': not collected')
@@ -124,8 +166,9 @@ def build_brief(market,macro_captures,geopolitical, *, as_of,monitoring_checks=(
        'reference_session':expected,'freshness_gaps':sorted(gaps)})
     return {'report_type':'MARKET_RISK_INTELLIGENCE_NOT_FORECAST','method_version':METHOD,'method_code_hash':code_hash,'source_signature':source_signature,
       'as_of':as_of.isoformat(),'brief_window':window,'reference_equity_session':expected,'market_regime':regime,'trajectory':trajectory,'headline':headline,
-      'method':'Transparent descriptive rule using actual completed-session VIX/VXN levels and five-session changes; not a calibrated timing or return model.',
+      'method':'Transparent descriptive rule using actual completed-session VIX/VXN levels and five-session changes, with separate exact preceding-session comparisons; not a calibrated timing or return model.',
       'intraday_confirmation':'NOT_ESTABLISHED','evidence':evidence,'macro_evidence':macros,'bullish_evidence':bull,
+      'session_comparisons':comparisons,
       'bearish_evidence':bear,'financing_signals':financing,'reported_developments':reported,'unverified_leads':unverified,
       'geopolitical_watch':geopolitical,
       'invalidation_conditions':{'improvement':['Broad/equal-weight participation improves alongside technology and prices hold their lows.',
@@ -139,18 +182,31 @@ def build_brief(market,macro_captures,geopolitical, *, as_of,monitoring_checks=(
 
 
 async def _geopolitical_market_context(store,now):
-    assessments=await store.rows('assessments',limit=60,filters={'created_at':'gte.'+(now-timedelta(hours=72)).isoformat()})
+    # Filter in the database BEFORE applying the bounded window. Frequent
+    # automated triage must not crowd actual analyst market reviews out.
+    assessments=await store.rows('assessments',limit=60,filters={
+      'created_at':'gte.'+(now-timedelta(hours=72)).isoformat(),
+      'market_hypothesis':'neq.','analysis->>assessment_origin':'neq.automated_triage'})
     result=[];groups=set()
     for a in assessments:
         analysis=a.get('analysis') or {}
-        if not a.get('market_hypothesis') or analysis.get('assessment_origin')=='automated_triage':continue
+        if not a.get('market_hypothesis') or analysis.get('assessment_origin')=='automated_triage' or parse_time(a['created_at'])>now:continue
         group=a.get('cluster_id') or ('lead:'+str(a.get('lead_id')))
         if group in groups:continue
-        refs=[{'url':e['source_url'],'limitations':e.get('limitations')} for e in analysis.get('evidence',[]) if e.get('source_url')]
+        refs=[{'url':e['source_url'],'limitations':e.get('limitations'),'origin_group':e.get('origin_group'),
+          'retained_observation':(e.get('reviewed_snapshot')or{}).get('retained_observation'),
+          'publication_time_note':(e.get('reviewed_snapshot')or{}).get('publication_time_note')}
+          for e in analysis.get('evidence',[]) if e.get('source_url')]
+        siblings=[x for x in assessments if x.get('cluster_id')==a.get('cluster_id') and
+          (x.get('analysis')or{}).get('review_key')==analysis.get('review_key') and x['id']!=a['id'] and
+          analysis.get('review_key') and x.get('market_hypothesis') and parse_time(x['created_at'])<=now]
         result.append({'assessment_id':a['id'],'recorded_at':a['created_at'],'as_of':analysis.get('as_of') or a['created_at'],
           'scenario':a['scenario'],'market_hypothesis':a['market_hypothesis'],'counterevidence':a.get('counterevidence'),
           'falsification':analysis.get('falsification_criteria'),'historical_backfill':bool(analysis.get('historical_backfill')),
-          'status':'RECORDED_ANALYST_HYPOTHESIS_NOT_INDEPENDENT_CONFIRMATION','sources':refs[:4]})
+          'status':'RECORDED_ANALYST_HYPOTHESIS_NOT_INDEPENDENT_CONFIRMATION','sources':refs[:5],
+          'competing_hypotheses':[{'assessment_id':x['id'],'scenario':x['scenario'],
+            'market_hypothesis':x['market_hypothesis'],'counterevidence':x.get('counterevidence'),
+            'falsification':(x.get('analysis')or{}).get('falsification_criteria')}for x in siblings[:2]]})
         groups.add(group)
         if len(result)>=5:break
     return result
